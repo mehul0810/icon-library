@@ -1,0 +1,141 @@
+.icon-library-admin h2 {
+	margin-top: 28px;
+}
+
+.icon-library-collections {
+	display: grid;
+	gap: 16px;
+	max-width: 1180px;
+}
+
+.icon-library-card {
+	align-items: flex-start;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	display: flex;
+	gap: 24px;
+	justify-content: space-between;
+	padding: 18px;
+}
+
+.icon-library-card h3 {
+	margin: 0 0 6px;
+}
+
+.icon-library-card p {
+	margin: 0 0 14px;
+	max-width: 760px;
+}
+
+.icon-library-card dl {
+	display: grid;
+	gap: 10px 20px;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	margin: 0;
+}
+
+.icon-library-card dt {
+	color: #646970;
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+}
+
+.icon-library-card dd {
+	margin: 2px 0 0;
+}
+
+.icon-library-card-actions {
+	align-items: flex-end;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-width: 130px;
+}
+
+.icon-library-status {
+	border-radius: 999px;
+	display: inline-block;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1;
+	padding: 6px 10px;
+}
+
+.icon-library-status.is-enabled {
+	background: #edfaef;
+	color: #008a20;
+}
+
+.icon-library-status.is-disabled {
+	background: #f6f7f7;
+	color: #50575e;
+}
+
+.icon-library-filters {
+	align-items: end;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin: 0 0 16px;
+}
+
+.icon-library-filters label {
+	display: grid;
+	gap: 4px;
+}
+
+.icon-library-filters label span {
+	font-weight: 600;
+}
+
+.icon-library-grid {
+	display: grid;
+	gap: 12px;
+	grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+	max-width: 1180px;
+}
+
+.icon-library-icon {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	display: grid;
+	gap: 8px;
+	min-height: 142px;
+	padding: 12px;
+}
+
+.icon-library-icon-preview {
+	align-items: center;
+	background: #f6f7f7;
+	display: flex;
+	height: 56px;
+	justify-content: center;
+}
+
+.icon-library-icon svg {
+	height: 28px;
+	width: 28px;
+}
+
+.icon-library-icon-label {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.icon-library-icon code {
+	font-size: 11px;
+	overflow-wrap: anywhere;
+	white-space: normal;
+}
+
+@media (max-width: 782px) {
+	.icon-library-card {
+		display: block;
+	}
+
+	.icon-library-card-actions {
+		align-items: flex-start;
+		margin-top: 16px;
+	}
+}
