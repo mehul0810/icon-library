@@ -8,7 +8,7 @@ Icon Library enables curated SVG icon collections for the native WordPress
 - WordPress 7.0+ only.
 - Bundled Heroicons collection.
 - Static manifests and optimized SVG files.
-- Appearance -> Icon Library activation screen.
+- Appearance -> Icons activation screen.
 - REST endpoints under `icon-library/v1`.
 - Guarded registration with the current core `WP_Icons_Registry` API.
 - No uploads, remote marketplace, icon fonts, or competing icon block.

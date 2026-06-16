@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Renders Appearance > Icon Library.
+ * Renders Appearance > Icons.
  */
 class AdminPage {
 	const MENU_SLUG = 'icon-library';
@@ -65,8 +65,8 @@ class AdminPage {
 	 */
 	public function register_menu() {
 		add_theme_page(
-			__( 'Icon Library', 'icon-library' ),
-			__( 'Icon Library', 'icon-library' ),
+			__( 'Icons', 'icon-library' ),
+			__( 'Icons', 'icon-library' ),
 			'manage_options',
 			self::MENU_SLUG,
 			array( $this, 'render' )
@@ -132,31 +132,18 @@ class AdminPage {
 
 		$collections = $this->collection_registry->get_collections();
 		$filters     = $this->get_filters( $collections );
-		$icons       = $this->collection_registry->get_icons(
-			array(
-				'collection' => $filters['collection'],
-				'variant'    => $filters['variant'],
-				'category'   => $filters['category'],
-				'search'     => $filters['search'],
-				'enabled'    => true,
-				'per_page'   => 72,
-			)
-		);
+		$active_tab  = $this->get_active_tab();
 		?>
 		<div class="wrap icon-library-admin">
-			<h1><?php esc_html_e( 'Icon Library', 'icon-library' ); ?></h1>
+			<h1><?php esc_html_e( 'Icons', 'icon-library' ); ?></h1>
 			<?php $this->render_notice(); ?>
+			<?php $this->render_tabs( $active_tab ); ?>
 
-			<h2><?php esc_html_e( 'Collections', 'icon-library' ); ?></h2>
-			<div class="icon-library-collections">
-				<?php foreach ( $collections as $collection ) : ?>
-					<?php $this->render_collection_card( $collection ); ?>
-				<?php endforeach; ?>
-			</div>
-
-			<h2><?php esc_html_e( 'Icon Browser', 'icon-library' ); ?></h2>
-			<?php $this->render_filters( $filters, $collections ); ?>
-			<?php $this->render_icon_grid( $icons ); ?>
+			<?php if ( 'browse' === $active_tab ) : ?>
+				<?php $this->render_browse_tab( $filters, $collections ); ?>
+			<?php else : ?>
+				<?php $this->render_library_tab( $collections ); ?>
+			<?php endif; ?>
 		</div>
 		<?php
 	}
@@ -182,11 +169,85 @@ class AdminPage {
 	}
 
 	/**
-	 * Renders one collection card.
+	 * Renders the tab navigation.
+	 *
+	 * @param string $active_tab Active tab slug.
+	 */
+	private function render_tabs( $active_tab ) {
+		$tabs = array(
+			'library' => __( 'Library', 'icon-library' ),
+			'browse'  => __( 'Browse', 'icon-library' ),
+		);
+		?>
+		<nav class="icon-library-tabs" aria-label="<?php esc_attr_e( 'Icon management', 'icon-library' ); ?>">
+			<?php foreach ( $tabs as $tab => $label ) : ?>
+				<?php
+				$url = add_query_arg(
+					array(
+						'page' => self::MENU_SLUG,
+						'tab'  => $tab,
+					),
+					admin_url( 'themes.php' )
+				);
+				?>
+				<a class="icon-library-tab <?php echo $active_tab === $tab ? 'is-active' : ''; ?>" href="<?php echo esc_url( $url ); ?>" <?php echo $active_tab === $tab ? 'aria-current="page"' : ''; ?>>
+					<?php echo esc_html( $label ); ?>
+				</a>
+			<?php endforeach; ?>
+		</nav>
+		<?php
+	}
+
+	/**
+	 * Renders the collection library tab.
+	 *
+	 * @param array[] $collections Collections.
+	 */
+	private function render_library_tab( $collections ) {
+		?>
+		<section class="icon-library-panel">
+			<h2><?php esc_html_e( 'Collections', 'icon-library' ); ?></h2>
+			<div class="icon-library-collection-list">
+				<?php foreach ( $collections as $collection ) : ?>
+					<?php $this->render_collection_row( $collection ); ?>
+				<?php endforeach; ?>
+			</div>
+		</section>
+		<?php
+	}
+
+	/**
+	 * Renders the icon browsing tab.
+	 *
+	 * @param array   $filters     Current filters.
+	 * @param array[] $collections Collections.
+	 */
+	private function render_browse_tab( $filters, $collections ) {
+		$icons = $this->collection_registry->get_icons(
+			array(
+				'collection' => $filters['collection'],
+				'variant'    => $filters['variant'],
+				'category'   => $filters['category'],
+				'search'     => $filters['search'],
+				'enabled'    => true,
+				'per_page'   => 72,
+			)
+		);
+		?>
+		<section class="icon-library-panel">
+			<h2><?php esc_html_e( 'Browse Icons', 'icon-library' ); ?></h2>
+			<?php $this->render_filters( $filters, $collections ); ?>
+			<?php $this->render_icon_grid( $icons ); ?>
+		</section>
+		<?php
+	}
+
+	/**
+	 * Renders one collection row.
 	 *
 	 * @param array $collection Collection summary.
 	 */
-	private function render_collection_card( $collection ) {
+	private function render_collection_row( $collection ) {
 		$enabled      = ! empty( $collection['enabled'] );
 		$license      = isset( $collection['license']['name'] ) ? $collection['license']['name'] : '';
 		$source       = isset( $collection['source']['name'] ) ? $collection['source']['name'] : '';
@@ -199,47 +260,52 @@ class AdminPage {
 				}
 			}
 		}
+
+		$variant_count = count( $variant_list );
 		?>
-		<section class="icon-library-card">
-			<div>
+		<div class="icon-library-collection-row">
+			<div class="icon-library-collection-main">
 				<h3><?php echo esc_html( $collection['name'] ); ?></h3>
-				<p><?php echo esc_html( $collection['description'] ); ?></p>
-				<dl>
-					<div>
-						<dt><?php esc_html_e( 'Icons', 'icon-library' ); ?></dt>
-						<dd><?php echo esc_html( number_format_i18n( $collection['iconCount'] ) ); ?></dd>
-					</div>
-					<div>
-						<dt><?php esc_html_e( 'Variants', 'icon-library' ); ?></dt>
-						<dd><?php echo esc_html( implode( ', ', $variant_list ) ); ?></dd>
-					</div>
-					<div>
-						<dt><?php esc_html_e( 'Version', 'icon-library' ); ?></dt>
-						<dd><?php echo esc_html( $collection['version'] ); ?></dd>
-					</div>
-					<div>
-						<dt><?php esc_html_e( 'License', 'icon-library' ); ?></dt>
-						<dd><?php echo esc_html( $license ); ?></dd>
-					</div>
-					<div>
-						<dt><?php esc_html_e( 'Source', 'icon-library' ); ?></dt>
-						<dd><?php echo esc_html( $source ); ?></dd>
-					</div>
-				</dl>
+				<p>
+					<?php
+					printf(
+						/* translators: 1: icon count, 2: variant labels, 3: license name, 4: source name. */
+						esc_html__( '%1$s icons - %2$s - %3$s - %4$s', 'icon-library' ),
+						esc_html( number_format_i18n( $collection['iconCount'] ) ),
+						esc_html( implode( ', ', $variant_list ) ),
+						esc_html( $license ),
+						esc_html( $source )
+					);
+					?>
+				</p>
 			</div>
-			<div class="icon-library-card-actions">
-				<span class="icon-library-status <?php echo $enabled ? 'is-enabled' : 'is-disabled'; ?>">
-					<?php echo esc_html( $enabled ? __( 'Enabled', 'icon-library' ) : __( 'Disabled', 'icon-library' ) ); ?>
+			<div class="icon-library-collection-actions">
+				<span class="icon-library-variant-summary">
+					<?php
+					echo esc_html(
+						$enabled
+							? sprintf(
+								/* translators: 1: active variant count, 2: total variant count. */
+								__( '%1$d/%2$d variants active', 'icon-library' ),
+								$variant_count,
+								$variant_count
+							)
+							: __( 'Inactive', 'icon-library' )
+					);
+					?>
 				</span>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 					<?php wp_nonce_field( 'icon_library_toggle_collection' ); ?>
 					<input type="hidden" name="action" value="icon_library_toggle_collection" />
 					<input type="hidden" name="collection" value="<?php echo esc_attr( $collection['slug'] ); ?>" />
 					<input type="hidden" name="state" value="<?php echo esc_attr( $enabled ? 'deactivate' : 'activate' ); ?>" />
-					<?php submit_button( $enabled ? __( 'Deactivate', 'icon-library' ) : __( 'Activate', 'icon-library' ), $enabled ? 'secondary' : 'primary', 'submit', false ); ?>
+					<button type="submit" class="button button-link">
+						<?php echo esc_html( $enabled ? __( 'Deactivate', 'icon-library' ) : __( 'Activate', 'icon-library' ) ); ?>
+					</button>
 				</form>
+				<span class="dashicons dashicons-arrow-right-alt2" aria-hidden="true"></span>
 			</div>
-		</section>
+		</div>
 		<?php
 	}
 
@@ -255,6 +321,7 @@ class AdminPage {
 		?>
 		<form class="icon-library-filters" method="get" action="<?php echo esc_url( admin_url( 'themes.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( self::MENU_SLUG ); ?>" />
+			<input type="hidden" name="tab" value="browse" />
 			<label>
 				<span><?php esc_html_e( 'Collection', 'icon-library' ); ?></span>
 				<select name="collection">
@@ -333,5 +400,16 @@ class AdminPage {
 			'category'   => isset( $_GET['category'] ) ? sanitize_key( wp_unslash( $_GET['category'] ) ) : '',
 			'search'     => isset( $_GET['search'] ) ? sanitize_text_field( wp_unslash( $_GET['search'] ) ) : '',
 		);
+	}
+
+	/**
+	 * Returns the active page tab.
+	 *
+	 * @return string
+	 */
+	private function get_active_tab() {
+		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'library';
+
+		return in_array( $tab, array( 'library', 'browse' ), true ) ? $tab : 'library';
 	}
 }

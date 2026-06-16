@@ -21,7 +21,7 @@ remote marketplaces, icon fonts, or a competing custom icon block.
 
 1. Upload the plugin to the `wp-content/plugins/icon-library` directory.
 2. Activate Icon Library in WordPress.
-3. Open Appearance > Icon Library to manage collections.
+3. Open Appearance > Icons to manage collections.
 
 == Frequently Asked Questions ==
 
