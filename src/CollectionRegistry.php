@@ -22,7 +22,11 @@ class CollectionRegistry {
 	 */
 	private $manifest_loader;
 
-	/** @var CustomIconRepository|null */
+	/**
+	 * Custom icon repository.
+	 *
+	 * @var CustomIconRepository|null
+	 */
 	private $custom_icons;
 
 	/**
@@ -89,7 +93,12 @@ class CollectionRegistry {
 		return array_values( array_unique( $slugs ) );
 	}
 
-	/** @return array|null */
+	/**
+	 * Returns one collection manifest.
+	 *
+	 * @param string $slug Collection slug.
+	 * @return array|null
+	 */
 	public function get_manifest( $slug ) {
 		if ( CustomIconRepository::COLLECTION_SLUG === $slug && $this->custom_icons ) {
 			return $this->custom_icons->get_manifest();
@@ -97,7 +106,13 @@ class CollectionRegistry {
 		return $this->manifest_loader->get_manifest( $slug );
 	}
 
-	/** @return string|null */
+	/**
+	 * Resolves one collection SVG path.
+	 *
+	 * @param string $slug          Collection slug.
+	 * @param string $relative_path Relative SVG path.
+	 * @return string|null
+	 */
 	public function get_svg_path( $slug, $relative_path ) {
 		if ( CustomIconRepository::COLLECTION_SLUG === $slug && $this->custom_icons ) {
 			return $this->custom_icons->get_file_path( $relative_path );
@@ -105,7 +120,13 @@ class CollectionRegistry {
 		return $this->manifest_loader->get_svg_path( $slug, $relative_path );
 	}
 
-	/** @return string|null */
+	/**
+	 * Reads one collection SVG.
+	 *
+	 * @param string $slug          Collection slug.
+	 * @param string $relative_path Relative SVG path.
+	 * @return string|null
+	 */
 	public function get_svg_content( $slug, $relative_path ) {
 		if ( CustomIconRepository::COLLECTION_SLUG === $slug && $this->custom_icons ) {
 			return $this->custom_icons->get_svg_content( $relative_path );
@@ -229,7 +250,7 @@ class CollectionRegistry {
 					continue;
 				}
 
-				if ( $variant_filter && $variant_filter !== sanitize_key( $icon['variant'] ?? '' ) ) {
+				if ( $variant_filter && sanitize_key( $icon['variant'] ?? '' ) !== $variant_filter ) {
 					continue;
 				}
 

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Icon Library
  * Description: Enables curated SVG icon collections for the native WordPress Icon block.
- * Version: 0.1.0
+ * Version: 1.0.0
  * Requires at least: 7.1
  * Requires PHP: 7.4
  * Author: Mehul Gohil
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'ICON_LIBRARY_VERSION', '0.1.0' );
+define( 'ICON_LIBRARY_VERSION', '1.0.0' );
 define( 'ICON_LIBRARY_FILE', __FILE__ );
 define( 'ICON_LIBRARY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'ICON_LIBRARY_URL', plugin_dir_url( __FILE__ ) );

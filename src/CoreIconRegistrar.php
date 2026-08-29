@@ -146,8 +146,8 @@ class CoreIconRegistrar {
 	/**
 	 * Registers one icon row.
 	 *
-	 * @param string           $collection_slug Collection slug.
-	 * @param array            $icon            Manifest icon row.
+	 * @param string $collection_slug Collection slug.
+	 * @param array  $icon            Manifest icon row.
 	 */
 	private function register_icon( $collection_slug, $icon ) {
 		if ( ! is_array( $icon ) || empty( $icon['coreIconName'] ) || empty( $icon['label'] ) || empty( $icon['path'] ) ) {

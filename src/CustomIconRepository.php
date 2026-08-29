@@ -18,25 +18,39 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class CustomIconRepository {
 	const COLLECTION_SLUG = 'custom-icons';
-	const OPTION_ICONS     = 'icon_library_custom_icons';
+	const OPTION_ICONS    = 'icon_library_custom_icons';
 
-	/** @var SvgSanitizer */
+	/**
+	 * SVG sanitizer.
+	 *
+	 * @var SvgSanitizer
+	 */
 	private $sanitizer;
 
 	/**
+	 * Constructor.
+	 *
 	 * @param SvgSanitizer $sanitizer SVG sanitizer.
 	 */
 	public function __construct( SvgSanitizer $sanitizer ) {
 		$this->sanitizer = $sanitizer;
 	}
 
-	/** @return array<string,array> */
+	/**
+	 * Returns stored icon metadata.
+	 *
+	 * @return array<string,array>
+	 */
 	public function get_icons() {
 		$icons = get_option( self::OPTION_ICONS, array() );
 		return is_array( $icons ) ? $icons : array();
 	}
 
-	/** @return array|null */
+	/**
+	 * Returns the dynamic custom collection manifest.
+	 *
+	 * @return array|null
+	 */
 	public function get_manifest() {
 		$icons = $this->get_icons();
 		if ( empty( $icons ) ) {
@@ -49,9 +63,20 @@ class CustomIconRepository {
 			'name'          => __( 'Custom Icons', 'icon-library' ),
 			'description'   => __( 'Icons uploaded locally by site administrators.', 'icon-library' ),
 			'version'       => 'site',
-			'license'       => array( 'name' => __( 'Site provided', 'icon-library' ), 'url' => '' ),
-			'source'        => array( 'name' => __( 'This site', 'icon-library' ), 'url' => '' ),
-			'variants'      => array( array( 'slug' => 'custom', 'label' => __( 'Custom', 'icon-library' ) ) ),
+			'license'       => array(
+				'name' => __( 'Site provided', 'icon-library' ),
+				'url'  => '',
+			),
+			'source'        => array(
+				'name' => __( 'This site', 'icon-library' ),
+				'url'  => '',
+			),
+			'variants'      => array(
+				array(
+					'slug'  => 'custom',
+					'label' => __( 'Custom', 'icon-library' ),
+				),
+			),
 			'icons'         => array_values( $icons ),
 		);
 	}
@@ -93,9 +118,11 @@ class CustomIconRepository {
 
 		$path = $directory . '/' . $name . '.svg';
 		$temp = tempnam( $directory, '.icon-library-' );
+		// Atomic same-directory replacement in the plugin-owned uploads directory.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename
 		if ( ! $temp || false === file_put_contents( $temp, $sanitized, LOCK_EX ) || ! rename( $temp, $path ) ) {
 			if ( $temp && file_exists( $temp ) ) {
-				unlink( $temp );
+				wp_delete_file( $temp );
 			}
 			return new WP_Error( 'icon_library_custom_write_failed', __( 'The sanitized icon could not be stored.', 'icon-library' ) );
 		}
@@ -112,14 +139,19 @@ class CustomIconRepository {
 		);
 
 		if ( ! update_option( self::OPTION_ICONS, $icons, false ) ) {
-			unlink( $path );
+			wp_delete_file( $path );
 			return new WP_Error( 'icon_library_custom_metadata_failed', __( 'The icon metadata could not be stored.', 'icon-library' ) );
 		}
 
 		return $icons[ $name ];
 	}
 
-	/** @return string|null */
+	/**
+	 * Resolves one stored icon file.
+	 *
+	 * @param string $relative_path Relative SVG path.
+	 * @return string|null
+	 */
 	public function get_file_path( $relative_path ) {
 		$name = basename( (string) $relative_path, '.svg' );
 		if ( $name . '.svg' !== $relative_path || ! isset( $this->get_icons()[ $name ] ) ) {
@@ -133,9 +165,14 @@ class CustomIconRepository {
 		return is_readable( $path ) ? $path : null;
 	}
 
-	/** @return string|null */
+	/**
+	 * Reads one stored icon.
+	 *
+	 * @param string $relative_path Relative SVG path.
+	 * @return string|null
+	 */
 	public function get_svg_content( $relative_path ) {
-		$path = $this->get_file_path( $relative_path );
+		$path    = $this->get_file_path( $relative_path );
 		$content = $path ? file_get_contents( $path ) : false;
 		return is_string( $content ) ? $content : null;
 	}
@@ -186,12 +223,17 @@ class CustomIconRepository {
 		$directory = $this->get_directory( false );
 		$path      = is_wp_error( $directory ) ? '' : $directory . '/' . $name . '.svg';
 		if ( $path && file_exists( $path ) ) {
-			unlink( $path );
+			wp_delete_file( $path );
 		}
 		return true;
 	}
 
-	/** @return string|WP_Error */
+	/**
+	 * Resolves the plugin-owned upload directory.
+	 *
+	 * @param bool $create Whether to create the directory.
+	 * @return string|WP_Error
+	 */
 	private function get_directory( $create ) {
 		$uploads = wp_upload_dir();
 		if ( ! empty( $uploads['error'] ) ) {
