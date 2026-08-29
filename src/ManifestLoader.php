@@ -135,6 +135,25 @@ class ManifestLoader {
 	 * @return string|null
 	 */
 	public function get_svg_content( $collection_slug, $relative_path ) {
+		$file = $this->get_svg_path( $collection_slug, $relative_path );
+
+		if ( null === $file ) {
+			return null;
+		}
+
+		$content = file_get_contents( $file );
+
+		return is_string( $content ) ? $content : null;
+	}
+
+	/**
+	 * Returns an absolute validated SVG path for lazy Core registration.
+	 *
+	 * @param string $collection_slug Collection slug.
+	 * @param string $relative_path   Manifest-relative SVG path.
+	 * @return string|null
+	 */
+	public function get_svg_path( $collection_slug, $relative_path ) {
 		$collection_slug = sanitize_key( $collection_slug );
 		$relative_path   = ltrim( str_replace( '\\', '/', (string) $relative_path ), '/' );
 
@@ -153,9 +172,7 @@ class ManifestLoader {
 			return null;
 		}
 
-		$content = file_get_contents( $file );
-
-		return is_string( $content ) ? $content : null;
+		return $file;
 	}
 
 	/**

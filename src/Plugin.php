@@ -25,11 +25,10 @@ class Plugin {
 		$sanitizer           = new SvgSanitizer();
 		$manifest_loader     = new ManifestLoader( ICON_LIBRARY_DIR . 'assets/icons' );
 		$collection_registry = new CollectionRegistry( $manifest_loader );
-		$core_registrar      = new CoreIconRegistrar( $collection_registry, $manifest_loader, $sanitizer );
-		$rest_controller     = new RestController( $collection_registry, $manifest_loader, $sanitizer );
+		$core_registrar      = new CoreIconRegistrar( $collection_registry, $manifest_loader );
+		$rest_controller     = new RestController( $collection_registry );
 
 		add_action( 'init', array( $core_registrar, 'register_icons' ), 20 );
-		add_filter( 'rest_post_dispatch', array( $core_registrar, 'filter_core_icons_response' ), 10, 3 );
 		add_action( 'rest_api_init', array( $rest_controller, 'register_routes' ) );
 
 		if ( is_admin() ) {
