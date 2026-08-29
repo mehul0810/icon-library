@@ -68,9 +68,10 @@ class SvgSanitizer {
 
 		$geometry_count = 0;
 		foreach ( $document->getElementsByTagName( '*' ) as $element ) {
-			$tag = strtolower( $element->localName ?: $element->tagName );
+			$tag = strtolower( $element->localName ? $element->localName : $element->tagName );
 
 			if ( ! isset( self::CUSTOM_ALLOWED[ $tag ] ) ) {
+				/* translators: %s: SVG element name. */
 				return new WP_Error( 'icon_library_svg_element', sprintf( __( 'Unsupported SVG element: %s.', 'icon-library' ), $tag ) );
 			}
 
@@ -79,8 +80,9 @@ class SvgSanitizer {
 			}
 
 			foreach ( iterator_to_array( $element->attributes ) as $attribute ) {
-				$name = strtolower( $attribute->localName ?: $attribute->name );
+				$name = strtolower( $attribute->localName ? $attribute->localName : $attribute->name );
 				if ( ! in_array( $name, self::CUSTOM_ALLOWED[ $tag ], true ) ) {
+					/* translators: 1: SVG attribute name, 2: SVG element name. */
 					return new WP_Error( 'icon_library_svg_attribute', sprintf( __( 'Unsupported SVG attribute: %1$s on %2$s.', 'icon-library' ), $name, $tag ) );
 				}
 				if ( $attribute->namespaceURI && 'http://www.w3.org/2000/xmlns/' !== $attribute->namespaceURI ) {
@@ -170,21 +172,21 @@ class SvgSanitizer {
 
 		return array(
 			'svg'      => array(
-				'aria-hidden' => true,
-				'class'       => true,
-				'clip-rule'   => true,
-				'fill'        => true,
-				'fill-rule'   => true,
-				'focusable'   => true,
-				'height'      => true,
-				'role'        => true,
-				'stroke'      => true,
+				'aria-hidden'     => true,
+				'class'           => true,
+				'clip-rule'       => true,
+				'fill'            => true,
+				'fill-rule'       => true,
+				'focusable'       => true,
+				'height'          => true,
+				'role'            => true,
+				'stroke'          => true,
 				'stroke-linecap'  => true,
 				'stroke-linejoin' => true,
 				'stroke-width'    => true,
-				'viewbox'     => true,
-				'width'       => true,
-				'xmlns'       => true,
+				'viewbox'         => true,
+				'width'           => true,
+				'xmlns'           => true,
 			),
 			'g'        => $common_shape_attributes,
 			'path'     => $common_shape_attributes,

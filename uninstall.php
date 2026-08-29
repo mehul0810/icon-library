@@ -12,19 +12,22 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 delete_option( 'icon_library_enabled_collections' );
 delete_option( 'icon_library_custom_icons' );
 
-$uploads   = wp_upload_dir();
-$directory = empty( $uploads['error'] ) ? trailingslashit( $uploads['basedir'] ) . 'icon-library/custom-icons' : '';
+$icon_library_uploads   = wp_upload_dir();
+$icon_library_directory = empty( $icon_library_uploads['error'] ) ? trailingslashit( $icon_library_uploads['basedir'] ) . 'icon-library/custom-icons' : '';
 
-if ( $directory && is_dir( $directory ) ) {
-	$files = glob( $directory . '/*.svg' );
-	if ( is_array( $files ) ) {
-		foreach ( $files as $file ) {
-			unlink( $file );
+if ( $icon_library_directory && is_dir( $icon_library_directory ) ) {
+	$icon_library_files = glob( $icon_library_directory . '/*.svg' );
+	if ( is_array( $icon_library_files ) ) {
+		foreach ( $icon_library_files as $icon_library_file ) {
+			wp_delete_file( $icon_library_file );
 		}
 	}
-	rmdir( $directory );
-	$parent = dirname( $directory );
-	if ( is_dir( $parent ) && array( '.', '..' ) === scandir( $parent ) ) {
-		rmdir( $parent );
+	// Remove only the now-empty plugin-owned directories.
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir
+	rmdir( $icon_library_directory );
+	$icon_library_parent = dirname( $icon_library_directory );
+	if ( is_dir( $icon_library_parent ) && array( '.', '..' ) === scandir( $icon_library_parent ) ) {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir
+		rmdir( $icon_library_parent );
 	}
 }

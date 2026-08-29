@@ -98,13 +98,13 @@ class AdminPage {
 			'icon-library-admin',
 			'iconLibraryAdmin',
 			array(
-				'nonce'    => wp_create_nonce( 'wp_rest' ),
-				'restPath' => '/' . Plugin::REST_NAMESPACE . '/collections/',
+				'nonce'      => wp_create_nonce( 'wp_rest' ),
+				'restPath'   => '/' . Plugin::REST_NAMESPACE . '/collections/',
 				'customPath' => '/' . Plugin::REST_NAMESPACE . '/custom-icons',
-				'i18n'     => array(
-					'updating' => __( 'Updating collection...', 'icon-library' ),
-					'error'    => __( 'The collection could not be updated. Try again.', 'icon-library' ),
-					'uploading' => __( 'Validating and storing icon...', 'icon-library' ),
+				'i18n'       => array(
+					'updating'      => __( 'Updating collection...', 'icon-library' ),
+					'error'         => __( 'The collection could not be updated. Try again.', 'icon-library' ),
+					'uploading'     => __( 'Validating and storing icon...', 'icon-library' ),
 					'deleteConfirm' => __( 'Delete this icon? Existing blocks using it will no longer render.', 'icon-library' ),
 				),
 			)
@@ -175,10 +175,13 @@ class AdminPage {
 	 * Renders status notice after a toggle.
 	 */
 	private function render_notice() {
+		// This read-only query parameter controls feedback after a verified mutation.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		if ( ! isset( $_GET['icon-library-updated'] ) ) {
 			return;
 		}
 
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$updated = absint( $_GET['icon-library-updated'] );
 		$class   = $updated ? 'notice-success' : 'notice-error';
 		$message = $updated
@@ -253,7 +256,11 @@ class AdminPage {
 		<?php
 	}
 
-	/** @param array $icon Custom icon row. */
+	/**
+	 * Renders one custom icon.
+	 *
+	 * @param array $icon Custom icon row.
+	 */
 	private function render_custom_icon( $icon ) {
 		$name = basename( $icon['path'], '.svg' );
 		$svg  = $this->collection_registry->get_svg_content( CustomIconRepository::COLLECTION_SLUG, $icon['path'] );
@@ -513,10 +520,13 @@ class AdminPage {
 		unset( $collections );
 
 		return array(
+			// These read-only values filter escaped admin output and do not mutate state.
+			// phpcs:disable WordPress.Security.NonceVerification.Recommended
 			'collection' => isset( $_GET['collection'] ) ? sanitize_key( wp_unslash( $_GET['collection'] ) ) : '',
 			'variant'    => isset( $_GET['variant'] ) ? sanitize_key( wp_unslash( $_GET['variant'] ) ) : '',
 			'category'   => isset( $_GET['category'] ) ? sanitize_key( wp_unslash( $_GET['category'] ) ) : '',
 			'search'     => isset( $_GET['search'] ) ? sanitize_text_field( wp_unslash( $_GET['search'] ) ) : '',
+			// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		);
 	}
 
@@ -526,6 +536,8 @@ class AdminPage {
 	 * @return string
 	 */
 	private function get_active_tab() {
+		// Read-only navigation state; no nonce is required.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'library';
 
 		return in_array( $tab, array( 'library', 'browse', 'custom' ), true ) ? $tab : 'library';

@@ -11,7 +11,8 @@ Icon Library enables curated SVG icon collections for the native WordPress
 - Appearance -> Icons activation screen.
 - Plugin REST endpoints for collection state management.
 - Registration through the public WordPress SVG Icon API.
-- No uploads, remote marketplace, icon fonts, or competing icon block.
+- Strict local custom SVG management without Media Library SVG support.
+- No remote marketplace, icon fonts, or competing icon block.
 
 ## Core Icon API Integration
 
@@ -83,3 +84,20 @@ git clone --depth=1 https://github.com/tailwindlabs/heroicons.git /tmp/heroicons
 php scripts/import-heroicons.php /tmp/heroicons
 php scripts/validate-manifests.php
 ```
+
+## Development
+
+Install the development tools with `composer install`, then run:
+
+```bash
+composer check
+composer package
+```
+
+`composer package` creates `build/icon-library.1.0.0.zip` from an explicit
+production allowlist. Only SVG files referenced by the validated Heroicons
+manifest enter the archive.
+
+Collection authors should follow `schemas/collection-manifest.schema.json`, use
+stable namespaced IDs, include source revision and license metadata, and run
+the manifest validator before distributing a collection.

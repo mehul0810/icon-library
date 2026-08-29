@@ -33,6 +33,7 @@ final class CollectionBuild {
 	 *
 	 * @param string $svg SVG markup.
 	 * @return string
+	 * @throws RuntimeException When SVG markup is incompatible.
 	 */
 	public static function normalize_svg( $svg ) {
 		if ( ! is_string( $svg ) || '' === trim( $svg ) ) {

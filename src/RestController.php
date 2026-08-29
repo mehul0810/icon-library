@@ -27,7 +27,11 @@ class RestController {
 	 */
 	private $collection_registry;
 
-	/** @var CustomIconRepository */
+	/**
+	 * Custom icon repository.
+	 *
+	 * @var CustomIconRepository
+	 */
 	private $custom_icons;
 
 	/**
@@ -88,9 +92,18 @@ class RestController {
 				'callback'            => array( $this, 'create_custom_icon' ),
 				'permission_callback' => array( $this, 'can_manage_collections' ),
 				'args'                => array(
-					'name'  => array( 'type' => 'string', 'required' => true ),
-					'label' => array( 'type' => 'string', 'required' => true ),
-					'svg'   => array( 'type' => 'string', 'required' => true ),
+					'name'  => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+					'label' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+					'svg'   => array(
+						'type'     => 'string',
+						'required' => true,
+					),
 				),
 			)
 		);
@@ -103,7 +116,12 @@ class RestController {
 					'methods'             => 'PATCH',
 					'callback'            => array( $this, 'update_custom_icon' ),
 					'permission_callback' => array( $this, 'can_manage_collections' ),
-					'args'                => array( 'label' => array( 'type' => 'string', 'required' => true ) ),
+					'args'                => array(
+						'label' => array(
+							'type'     => 'string',
+							'required' => true,
+						),
+					),
 				),
 				array(
 					'methods'             => WP_REST_Server::DELETABLE,
@@ -114,7 +132,12 @@ class RestController {
 		);
 	}
 
-	/** @return WP_REST_Response|WP_Error */
+	/**
+	 * Creates a custom icon.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @return WP_REST_Response|WP_Error
+	 */
 	public function create_custom_icon( WP_REST_Request $request ) {
 		$result = $this->custom_icons->create( $request['name'], $request['label'], $request['svg'] );
 		if ( is_wp_error( $result ) ) {
@@ -124,13 +147,23 @@ class RestController {
 		return new WP_REST_Response( $result, 201 );
 	}
 
-	/** @return WP_REST_Response|WP_Error */
+	/**
+	 * Updates a custom icon label.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @return WP_REST_Response|WP_Error
+	 */
 	public function update_custom_icon( WP_REST_Request $request ) {
 		$result = $this->custom_icons->update_label( $request['name'], $request['label'] );
 		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
 	}
 
-	/** @return WP_REST_Response|WP_Error */
+	/**
+	 * Deletes a custom icon.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @return WP_REST_Response|WP_Error
+	 */
 	public function delete_custom_icon( WP_REST_Request $request ) {
 		$result = $this->custom_icons->delete( $request['name'] );
 		return is_wp_error( $result ) ? $result : rest_ensure_response( array( 'deleted' => true ) );
