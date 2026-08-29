@@ -7,6 +7,9 @@
 
 namespace IconLibrary;
 
+use WP_REST_Request;
+use WP_REST_Response;
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -48,7 +51,7 @@ class CoreIconRegistrar {
 			return;
 		}
 
-		foreach ( $this->collection_registry->get_enabled_collection_slugs() as $collection_slug ) {
+		foreach ( $this->collection_registry->get_available_collection_slugs() as $collection_slug ) {
 			$manifest = $this->manifest_loader->get_manifest( $collection_slug );
 
 			if ( ! $this->register_collection( $collection_slug, $manifest ) ) {
@@ -59,6 +62,66 @@ class CoreIconRegistrar {
 				$this->register_icon( $collection_slug, $icon );
 			}
 		}
+	}
+
+	/**
+	 * Hides disabled plugin collections from new selections while preserving
+	 * individual icon retrieval and server rendering for saved content.
+	 *
+	 * @param mixed           $response REST response.
+	 * @param mixed           $server   REST server.
+	 * @param WP_REST_Request $request  REST request.
+	 * @return mixed
+	 */
+	public function filter_core_discovery_response( $response, $server, $request ) {
+		unset( $server );
+
+		if ( ! $response instanceof WP_REST_Response || ! $request instanceof WP_REST_Request || 'GET' !== $request->get_method() ) {
+			return $response;
+		}
+
+		$route = $request->get_route();
+		$data  = $response->get_data();
+
+		if ( ! is_array( $data ) ) {
+			return $response;
+		}
+
+		$available = $this->collection_registry->get_available_collection_slugs();
+		$enabled   = $this->collection_registry->get_enabled_collection_slugs();
+		$disabled  = array_values( array_diff( $available, $enabled ) );
+
+		if ( empty( $disabled ) ) {
+			return $response;
+		}
+
+		if ( '/wp/v2/icon-collections' === $route ) {
+			$data = array_values(
+				array_filter(
+					$data,
+					static function ( $collection ) use ( $disabled ) {
+						return ! is_array( $collection ) || empty( $collection['slug'] ) || ! in_array( $collection['slug'], $disabled, true );
+					}
+				)
+			);
+		} elseif ( 1 === preg_match( '#^/wp/v2/icons(?:/([^/]+))?$#', $route, $matches ) ) {
+			if ( ! empty( $matches[1] ) && in_array( $matches[1], $disabled, true ) ) {
+				$data = array();
+			} else {
+				$data = array_values(
+					array_filter(
+						$data,
+						static function ( $icon ) use ( $disabled ) {
+							return ! is_array( $icon ) || empty( $icon['collection'] ) || ! in_array( $icon['collection'], $disabled, true );
+						}
+					)
+				);
+			}
+		}
+
+		$response->set_data( $data );
+
+		return $response;
 	}
 
 	/**

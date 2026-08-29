@@ -72,6 +72,15 @@ class CollectionRegistry {
 	}
 
 	/**
+	 * Returns collection slugs owned by this plugin.
+	 *
+	 * @return string[]
+	 */
+	public function get_available_collection_slugs() {
+		return $this->manifest_loader->get_collection_slugs();
+	}
+
+	/**
 	 * Returns enabled collection slugs.
 	 *
 	 * @return string[]

@@ -29,6 +29,7 @@ class Plugin {
 		$rest_controller     = new RestController( $collection_registry );
 
 		add_action( 'init', array( $core_registrar, 'register_icons' ), 20 );
+		add_filter( 'rest_post_dispatch', array( $core_registrar, 'filter_core_discovery_response' ), 10, 3 );
 		add_action( 'rest_api_init', array( $rest_controller, 'register_routes' ) );
 
 		if ( is_admin() ) {
