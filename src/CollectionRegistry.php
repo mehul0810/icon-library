@@ -22,13 +22,18 @@ class CollectionRegistry {
 	 */
 	private $manifest_loader;
 
+	/** @var CustomIconRepository|null */
+	private $custom_icons;
+
 	/**
 	 * Constructor.
 	 *
-	 * @param ManifestLoader $manifest_loader Manifest loader.
+	 * @param ManifestLoader            $manifest_loader Manifest loader.
+	 * @param CustomIconRepository|null $custom_icons    Custom icon repository.
 	 */
-	public function __construct( ManifestLoader $manifest_loader ) {
+	public function __construct( ManifestLoader $manifest_loader, ?CustomIconRepository $custom_icons = null ) {
 		$this->manifest_loader = $manifest_loader;
+		$this->custom_icons    = $custom_icons;
 	}
 
 	/**
@@ -40,8 +45,8 @@ class CollectionRegistry {
 		$collections = array();
 		$enabled     = $this->get_enabled_collection_slugs();
 
-		foreach ( $this->manifest_loader->get_collection_slugs() as $slug ) {
-			$manifest = $this->manifest_loader->get_manifest( $slug );
+		foreach ( $this->get_available_collection_slugs() as $slug ) {
+			$manifest = $this->get_manifest( $slug );
 
 			if ( ! is_array( $manifest ) ) {
 				continue;
@@ -77,7 +82,35 @@ class CollectionRegistry {
 	 * @return string[]
 	 */
 	public function get_available_collection_slugs() {
-		return $this->manifest_loader->get_collection_slugs();
+		$slugs = $this->manifest_loader->get_collection_slugs();
+		if ( $this->custom_icons && $this->custom_icons->get_manifest() ) {
+			$slugs[] = CustomIconRepository::COLLECTION_SLUG;
+		}
+		return array_values( array_unique( $slugs ) );
+	}
+
+	/** @return array|null */
+	public function get_manifest( $slug ) {
+		if ( CustomIconRepository::COLLECTION_SLUG === $slug && $this->custom_icons ) {
+			return $this->custom_icons->get_manifest();
+		}
+		return $this->manifest_loader->get_manifest( $slug );
+	}
+
+	/** @return string|null */
+	public function get_svg_path( $slug, $relative_path ) {
+		if ( CustomIconRepository::COLLECTION_SLUG === $slug && $this->custom_icons ) {
+			return $this->custom_icons->get_file_path( $relative_path );
+		}
+		return $this->manifest_loader->get_svg_path( $slug, $relative_path );
+	}
+
+	/** @return string|null */
+	public function get_svg_content( $slug, $relative_path ) {
+		if ( CustomIconRepository::COLLECTION_SLUG === $slug && $this->custom_icons ) {
+			return $this->custom_icons->get_svg_content( $relative_path );
+		}
+		return $this->manifest_loader->get_svg_content( $slug, $relative_path );
 	}
 
 	/**
@@ -86,7 +119,7 @@ class CollectionRegistry {
 	 * @return string[]
 	 */
 	public function get_enabled_collection_slugs() {
-		$available = $this->manifest_loader->get_collection_slugs();
+		$available = $this->get_available_collection_slugs();
 		$enabled   = get_option( Plugin::OPTION_ENABLED_COLLECTIONS, array( 'heroicons' ) );
 
 		if ( ! is_array( $enabled ) ) {
@@ -99,6 +132,11 @@ class CollectionRegistry {
 				$available
 			)
 		);
+
+		if ( in_array( CustomIconRepository::COLLECTION_SLUG, $available, true ) ) {
+			$enabled[] = CustomIconRepository::COLLECTION_SLUG;
+			$enabled   = array_values( array_unique( $enabled ) );
+		}
 
 		/**
 		 * Filters enabled icon collections.
@@ -117,6 +155,9 @@ class CollectionRegistry {
 	 */
 	public function set_collection_enabled( $slug, $enabled ) {
 		$slug = sanitize_key( $slug );
+		if ( CustomIconRepository::COLLECTION_SLUG === $slug ) {
+			return false;
+		}
 
 		if ( null === $this->get_collection( $slug ) ) {
 			return false;
@@ -177,7 +218,7 @@ class CollectionRegistry {
 				continue;
 			}
 
-			$manifest = $this->manifest_loader->get_manifest( $collection_slug );
+			$manifest = $this->get_manifest( $collection_slug );
 
 			if ( empty( $manifest['icons'] ) || ! is_array( $manifest['icons'] ) ) {
 				continue;
@@ -222,8 +263,8 @@ class CollectionRegistry {
 	 * @return string|null
 	 */
 	public function get_collection_slug_for_core_icon_name( $core_icon_name ) {
-		foreach ( $this->manifest_loader->get_collection_slugs() as $collection_slug ) {
-			$manifest = $this->manifest_loader->get_manifest( $collection_slug );
+		foreach ( $this->get_available_collection_slugs() as $collection_slug ) {
+			$manifest = $this->get_manifest( $collection_slug );
 
 			if ( empty( $manifest['icons'] ) || ! is_array( $manifest['icons'] ) ) {
 				continue;

@@ -29,8 +29,6 @@ class AdminPage {
 	 *
 	 * @var ManifestLoader
 	 */
-	private $manifest_loader;
-
 	/**
 	 * SVG sanitizer.
 	 *
@@ -42,12 +40,10 @@ class AdminPage {
 	 * Constructor.
 	 *
 	 * @param CollectionRegistry $collection_registry Collection registry.
-	 * @param ManifestLoader     $manifest_loader     Manifest loader.
 	 * @param SvgSanitizer       $svg_sanitizer       SVG sanitizer.
 	 */
-	public function __construct( CollectionRegistry $collection_registry, ManifestLoader $manifest_loader, SvgSanitizer $svg_sanitizer ) {
+	public function __construct( CollectionRegistry $collection_registry, SvgSanitizer $svg_sanitizer ) {
 		$this->collection_registry = $collection_registry;
-		$this->manifest_loader     = $manifest_loader;
 		$this->svg_sanitizer       = $svg_sanitizer;
 	}
 
@@ -104,9 +100,12 @@ class AdminPage {
 			array(
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 				'restPath' => '/' . Plugin::REST_NAMESPACE . '/collections/',
+				'customPath' => '/' . Plugin::REST_NAMESPACE . '/custom-icons',
 				'i18n'     => array(
 					'updating' => __( 'Updating collection...', 'icon-library' ),
 					'error'    => __( 'The collection could not be updated. Try again.', 'icon-library' ),
+					'uploading' => __( 'Validating and storing icon...', 'icon-library' ),
+					'deleteConfirm' => __( 'Delete this icon? Existing blocks using it will no longer render.', 'icon-library' ),
 				),
 			)
 		);
@@ -163,6 +162,8 @@ class AdminPage {
 
 			<?php if ( 'browse' === $active_tab ) : ?>
 				<?php $this->render_browse_tab( $filters, $collections ); ?>
+			<?php elseif ( 'custom' === $active_tab ) : ?>
+				<?php $this->render_custom_tab(); ?>
 			<?php else : ?>
 				<?php $this->render_library_tab( $collections ); ?>
 			<?php endif; ?>
@@ -199,6 +200,7 @@ class AdminPage {
 		$tabs = array(
 			'library' => __( 'Library', 'icon-library' ),
 			'browse'  => __( 'Browse', 'icon-library' ),
+			'custom'  => __( 'Custom Icons', 'icon-library' ),
 		);
 		?>
 		<nav class="icon-library-tabs" aria-label="<?php esc_attr_e( 'Icon management', 'icon-library' ); ?>">
@@ -217,6 +219,54 @@ class AdminPage {
 				</a>
 			<?php endforeach; ?>
 		</nav>
+		<?php
+	}
+
+	/**
+	 * Renders local custom icon management.
+	 */
+	private function render_custom_tab() {
+		$manifest = $this->collection_registry->get_manifest( CustomIconRepository::COLLECTION_SLUG );
+		$icons    = $manifest && ! empty( $manifest['icons'] ) ? $manifest['icons'] : array();
+		?>
+		<section class="icon-library-panel icon-library-custom">
+			<h2><?php esc_html_e( 'Add Custom Icon', 'icon-library' ); ?></h2>
+			<form class="icon-library-custom-upload">
+				<label><span><?php esc_html_e( 'Name', 'icon-library' ); ?></span><input name="name" type="text" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required placeholder="<?php esc_attr_e( 'my-icon', 'icon-library' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Label', 'icon-library' ); ?></span><input name="label" type="text" required /></label>
+				<label><span><?php esc_html_e( 'SVG file', 'icon-library' ); ?></span><input name="svg" type="file" accept=".svg,image/svg+xml" required /></label>
+				<?php submit_button( __( 'Add Icon', 'icon-library' ), 'primary', 'submit', false ); ?>
+			</form>
+			<p class="description"><?php esc_html_e( 'SVG files are validated locally and are not added to the Media Library. Supported geometry is limited to paths and polygons.', 'icon-library' ); ?></p>
+
+			<h2 class="icon-library-custom-heading"><?php esc_html_e( 'Custom Icons', 'icon-library' ); ?></h2>
+			<?php if ( empty( $icons ) ) : ?>
+				<p><?php esc_html_e( 'No custom icons have been added.', 'icon-library' ); ?></p>
+			<?php else : ?>
+				<div class="icon-library-grid">
+					<?php foreach ( $icons as $icon ) : ?>
+						<?php $this->render_custom_icon( $icon ); ?>
+					<?php endforeach; ?>
+				</div>
+			<?php endif; ?>
+		</section>
+		<?php
+	}
+
+	/** @param array $icon Custom icon row. */
+	private function render_custom_icon( $icon ) {
+		$name = basename( $icon['path'], '.svg' );
+		$svg  = $this->collection_registry->get_svg_content( CustomIconRepository::COLLECTION_SLUG, $icon['path'] );
+		?>
+		<div class="icon-library-icon icon-library-custom-icon" data-name="<?php echo esc_attr( $name ); ?>">
+			<div class="icon-library-icon-preview" aria-hidden="true"><?php echo wp_kses( $svg, SvgSanitizer::get_allowed_svg_tags() ); ?></div>
+			<label><span class="screen-reader-text"><?php esc_html_e( 'Icon label', 'icon-library' ); ?></span><input class="icon-library-custom-label" value="<?php echo esc_attr( $icon['label'] ); ?>" /></label>
+			<code><?php echo esc_html( $icon['coreIconName'] ); ?></code>
+			<div class="icon-library-custom-actions">
+				<button type="button" class="button icon-library-custom-save"><?php esc_html_e( 'Save label', 'icon-library' ); ?></button>
+				<button type="button" class="button button-link-delete icon-library-custom-delete"><?php esc_html_e( 'Delete', 'icon-library' ); ?></button>
+			</div>
+		</div>
 		<?php
 	}
 
@@ -271,6 +321,7 @@ class AdminPage {
 	 */
 	private function render_collection_row( $collection ) {
 		$enabled      = ! empty( $collection['enabled'] );
+		$is_custom    = CustomIconRepository::COLLECTION_SLUG === $collection['slug'];
 		$license      = isset( $collection['license']['name'] ) ? $collection['license']['name'] : '';
 		$source       = isset( $collection['source']['name'] ) ? $collection['source']['name'] : '';
 		$variant_list = array();
@@ -317,6 +368,7 @@ class AdminPage {
 					);
 					?>
 				</span>
+				<?php if ( ! $is_custom ) : ?>
 				<form class="icon-library-toggle" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-collection="<?php echo esc_attr( $collection['slug'] ); ?>" data-state="<?php echo esc_attr( $enabled ? 'deactivate' : 'activate' ); ?>">
 					<?php wp_nonce_field( 'icon_library_toggle_collection' ); ?>
 					<input type="hidden" name="action" value="icon_library_toggle_collection" />
@@ -326,6 +378,7 @@ class AdminPage {
 						<?php echo esc_html( $enabled ? __( 'Deactivate', 'icon-library' ) : __( 'Activate', 'icon-library' ) ); ?>
 					</button>
 				</form>
+				<?php endif; ?>
 				<span class="dashicons dashicons-arrow-right-alt2" aria-hidden="true"></span>
 			</div>
 		</div>
@@ -402,7 +455,7 @@ class AdminPage {
 		$slugs      = $collection_slug ? array( $collection_slug ) : $this->collection_registry->get_enabled_collection_slugs();
 
 		foreach ( $slugs as $slug ) {
-			$manifest = $this->manifest_loader->get_manifest( $slug );
+			$manifest = $this->collection_registry->get_manifest( $slug );
 
 			if ( empty( $manifest['icons'] ) || ! is_array( $manifest['icons'] ) ) {
 				continue;
@@ -435,7 +488,7 @@ class AdminPage {
 		<div class="icon-library-grid">
 			<?php foreach ( $icons as $icon ) : ?>
 				<?php
-				$svg = $this->manifest_loader->get_svg_content( $icon['collection'], $icon['path'] ?? '' );
+				$svg = $this->collection_registry->get_svg_content( $icon['collection'], $icon['path'] ?? '' );
 				$svg = $this->svg_sanitizer->sanitize( $svg );
 				?>
 				<div class="icon-library-icon">
@@ -475,6 +528,6 @@ class AdminPage {
 	private function get_active_tab() {
 		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'library';
 
-		return in_array( $tab, array( 'library', 'browse' ), true ) ? $tab : 'library';
+		return in_array( $tab, array( 'library', 'browse', 'custom' ), true ) ? $tab : 'library';
 	}
 }

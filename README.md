@@ -63,6 +63,19 @@ Deactivating or uninstalling the provider plugin therefore makes those icons
 unavailable. This Core limitation is tracked upstream in
 https://github.com/WordPress/gutenberg/issues/80668.
 
+## Custom Icons
+
+Administrators can add SVG files through **Appearance > Icons > Custom Icons**.
+The plugin validates the file against the WordPress 7.1 icon geometry contract
+before storing the sanitized SVG locally under the uploads directory. This does
+not enable SVG uploads in the Media Library and makes no remote requests.
+
+Custom icon names are stable after creation so existing blocks keep their
+registered name; their display labels can be changed. Deleting a custom icon
+immediately prevents existing blocks that reference it from rendering. Plugin
+uninstall removes custom icon metadata and the plugin-owned SVG files, with the
+same consequence for retained post content.
+
 ## Importing Heroicons
 
 ```bash

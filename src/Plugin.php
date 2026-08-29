@@ -23,17 +23,18 @@ class Plugin {
 	 */
 	public function register() {
 		$sanitizer           = new SvgSanitizer();
+		$custom_icons        = new CustomIconRepository( $sanitizer );
 		$manifest_loader     = new ManifestLoader( ICON_LIBRARY_DIR . 'assets/icons' );
-		$collection_registry = new CollectionRegistry( $manifest_loader );
-		$core_registrar      = new CoreIconRegistrar( $collection_registry, $manifest_loader );
-		$rest_controller     = new RestController( $collection_registry );
+		$collection_registry = new CollectionRegistry( $manifest_loader, $custom_icons );
+		$core_registrar      = new CoreIconRegistrar( $collection_registry );
+		$rest_controller     = new RestController( $collection_registry, $custom_icons );
 
 		add_action( 'init', array( $core_registrar, 'register_icons' ), 20 );
 		add_filter( 'rest_post_dispatch', array( $core_registrar, 'filter_core_discovery_response' ), 10, 3 );
 		add_action( 'rest_api_init', array( $rest_controller, 'register_routes' ) );
 
 		if ( is_admin() ) {
-			$admin_page = new AdminPage( $collection_registry, $manifest_loader, $sanitizer );
+			$admin_page = new AdminPage( $collection_registry, $sanitizer );
 			$admin_page->register();
 		}
 	}
