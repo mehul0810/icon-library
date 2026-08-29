@@ -27,13 +27,18 @@ class RestController {
 	 */
 	private $collection_registry;
 
+	/** @var CustomIconRepository */
+	private $custom_icons;
+
 	/**
 	 * Constructor.
 	 *
-	 * @param CollectionRegistry $collection_registry Collection registry.
+	 * @param CollectionRegistry   $collection_registry Collection registry.
+	 * @param CustomIconRepository $custom_icons        Custom icon repository.
 	 */
-	public function __construct( CollectionRegistry $collection_registry ) {
+	public function __construct( CollectionRegistry $collection_registry, CustomIconRepository $custom_icons ) {
 		$this->collection_registry = $collection_registry;
+		$this->custom_icons        = $custom_icons;
 	}
 
 	/**
@@ -74,6 +79,61 @@ class RestController {
 				'args'                => $this->get_collection_mutation_args(),
 			)
 		);
+
+		register_rest_route(
+			Plugin::REST_NAMESPACE,
+			'/custom-icons',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'create_custom_icon' ),
+				'permission_callback' => array( $this, 'can_manage_collections' ),
+				'args'                => array(
+					'name'  => array( 'type' => 'string', 'required' => true ),
+					'label' => array( 'type' => 'string', 'required' => true ),
+					'svg'   => array( 'type' => 'string', 'required' => true ),
+				),
+			)
+		);
+
+		register_rest_route(
+			Plugin::REST_NAMESPACE,
+			'/custom-icons/(?P<name>[a-z0-9]+(?:-[a-z0-9]+)*)',
+			array(
+				array(
+					'methods'             => 'PATCH',
+					'callback'            => array( $this, 'update_custom_icon' ),
+					'permission_callback' => array( $this, 'can_manage_collections' ),
+					'args'                => array( 'label' => array( 'type' => 'string', 'required' => true ) ),
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( $this, 'delete_custom_icon' ),
+					'permission_callback' => array( $this, 'can_manage_collections' ),
+				),
+			)
+		);
+	}
+
+	/** @return WP_REST_Response|WP_Error */
+	public function create_custom_icon( WP_REST_Request $request ) {
+		$result = $this->custom_icons->create( $request['name'], $request['label'], $request['svg'] );
+		if ( is_wp_error( $result ) ) {
+			$result->add_data( array( 'status' => 400 ) );
+			return $result;
+		}
+		return new WP_REST_Response( $result, 201 );
+	}
+
+	/** @return WP_REST_Response|WP_Error */
+	public function update_custom_icon( WP_REST_Request $request ) {
+		$result = $this->custom_icons->update_label( $request['name'], $request['label'] );
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
+	}
+
+	/** @return WP_REST_Response|WP_Error */
+	public function delete_custom_icon( WP_REST_Request $request ) {
+		$result = $this->custom_icons->delete( $request['name'] );
+		return is_wp_error( $result ) ? $result : rest_ensure_response( array( 'deleted' => true ) );
 	}
 
 	/**

@@ -30,17 +30,13 @@ class CoreIconRegistrar {
 	 *
 	 * @var ManifestLoader
 	 */
-	private $manifest_loader;
-
 	/**
 	 * Constructor.
 	 *
 	 * @param CollectionRegistry $collection_registry Collection registry.
-	 * @param ManifestLoader     $manifest_loader     Manifest loader.
 	 */
-	public function __construct( CollectionRegistry $collection_registry, ManifestLoader $manifest_loader ) {
+	public function __construct( CollectionRegistry $collection_registry ) {
 		$this->collection_registry = $collection_registry;
-		$this->manifest_loader     = $manifest_loader;
 	}
 
 	/**
@@ -52,7 +48,7 @@ class CoreIconRegistrar {
 		}
 
 		foreach ( $this->collection_registry->get_available_collection_slugs() as $collection_slug ) {
-			$manifest = $this->manifest_loader->get_manifest( $collection_slug );
+			$manifest = $this->collection_registry->get_manifest( $collection_slug );
 
 			if ( ! $this->register_collection( $collection_slug, $manifest ) ) {
 				continue;
@@ -159,7 +155,7 @@ class CoreIconRegistrar {
 		}
 
 		$core_icon_name = sanitize_text_field( $icon['coreIconName'] );
-		$file_path      = $this->manifest_loader->get_svg_path( $collection_slug, $icon['path'] );
+		$file_path      = $this->collection_registry->get_svg_path( $collection_slug, $icon['path'] );
 
 		if ( 0 !== strpos( $core_icon_name, $collection_slug . '/' ) || null === $file_path ) {
 			return;
