@@ -17,6 +17,17 @@
 	margin-right: 32px;
 }
 
+.icon-library-status:empty {
+	display: none;
+}
+
+.icon-library-status {
+	background: #fff;
+	border-left: 4px solid #3858e9;
+	margin: 16px 32px 0;
+	padding: 10px 12px;
+}
+
 .icon-library-tabs {
 	background: #fff;
 	border-bottom: 1px solid #dcdcde;
@@ -184,6 +195,15 @@
 	}
 
 	.icon-library-collection-actions {
+		align-items: flex-start;
+		flex-wrap: wrap;
 		margin-top: 12px;
+	}
+
+	.icon-library-filters,
+	.icon-library-filters label,
+	.icon-library-filters select,
+	.icon-library-filters input[type="search"] {
+		width: 100%;
 	}
 }
