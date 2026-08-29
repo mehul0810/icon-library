@@ -89,6 +89,27 @@ class AdminPage {
 			array(),
 			ICON_LIBRARY_VERSION
 		);
+
+		wp_enqueue_script(
+			'icon-library-admin',
+			ICON_LIBRARY_URL . 'assets/admin.js',
+			array( 'wp-api-fetch' ),
+			ICON_LIBRARY_VERSION,
+			true
+		);
+
+		wp_localize_script(
+			'icon-library-admin',
+			'iconLibraryAdmin',
+			array(
+				'nonce'    => wp_create_nonce( 'wp_rest' ),
+				'restPath' => '/' . Plugin::REST_NAMESPACE . '/collections/',
+				'i18n'     => array(
+					'updating' => __( 'Updating collection...', 'icon-library' ),
+					'error'    => __( 'The collection could not be updated. Try again.', 'icon-library' ),
+				),
+			)
+		);
 	}
 
 	/**
@@ -136,6 +157,7 @@ class AdminPage {
 		?>
 		<div class="wrap icon-library-admin">
 			<h1><?php esc_html_e( 'Icons', 'icon-library' ); ?></h1>
+			<div class="icon-library-status" role="status" aria-live="polite"></div>
 			<?php $this->render_notice(); ?>
 			<?php $this->render_tabs( $active_tab ); ?>
 
@@ -269,10 +291,11 @@ class AdminPage {
 				<p>
 					<?php
 					printf(
-						/* translators: 1: icon count, 2: variant labels, 3: license name, 4: source name. */
-						esc_html__( '%1$s icons - %2$s - %3$s - %4$s', 'icon-library' ),
+						/* translators: 1: icon count, 2: variant labels, 3: collection version, 4: license name, 5: source name. */
+						esc_html__( '%1$s icons - %2$s - Version %3$s - %4$s - %5$s', 'icon-library' ),
 						esc_html( number_format_i18n( $collection['iconCount'] ) ),
 						esc_html( implode( ', ', $variant_list ) ),
+						esc_html( $collection['version'] ),
 						esc_html( $license ),
 						esc_html( $source )
 					);
@@ -294,7 +317,7 @@ class AdminPage {
 					);
 					?>
 				</span>
-				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<form class="icon-library-toggle" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-collection="<?php echo esc_attr( $collection['slug'] ); ?>" data-state="<?php echo esc_attr( $enabled ? 'deactivate' : 'activate' ); ?>">
 					<?php wp_nonce_field( 'icon_library_toggle_collection' ); ?>
 					<input type="hidden" name="action" value="icon_library_toggle_collection" />
 					<input type="hidden" name="collection" value="<?php echo esc_attr( $collection['slug'] ); ?>" />
@@ -318,6 +341,7 @@ class AdminPage {
 	private function render_filters( $filters, $collections ) {
 		$selected_collection = isset( $collections[ $filters['collection'] ] ) ? $collections[ $filters['collection'] ] : reset( $collections );
 		$variants            = isset( $selected_collection['variants'] ) && is_array( $selected_collection['variants'] ) ? $selected_collection['variants'] : array();
+		$categories          = $this->get_categories( $filters['collection'] );
 		?>
 		<form class="icon-library-filters" method="get" action="<?php echo esc_url( admin_url( 'themes.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( self::MENU_SLUG ); ?>" />
@@ -332,6 +356,17 @@ class AdminPage {
 						<?php endif; ?>
 						<option value="<?php echo esc_attr( $collection['slug'] ); ?>" <?php selected( $filters['collection'], $collection['slug'] ); ?>>
 							<?php echo esc_html( $collection['name'] ); ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+			</label>
+			<label>
+				<span><?php esc_html_e( 'Category', 'icon-library' ); ?></span>
+				<select name="category">
+					<option value=""><?php esc_html_e( 'All categories', 'icon-library' ); ?></option>
+					<?php foreach ( $categories as $category ) : ?>
+						<option value="<?php echo esc_attr( $category ); ?>" <?php selected( $filters['category'], $category ); ?>>
+							<?php echo esc_html( ucwords( str_replace( '-', ' ', $category ) ) ); ?>
 						</option>
 					<?php endforeach; ?>
 				</select>
@@ -354,6 +389,36 @@ class AdminPage {
 			<?php submit_button( __( 'Filter', 'icon-library' ), 'secondary', 'submit', false ); ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * Returns categories available for the current collection filter.
+	 *
+	 * @param string $collection_slug Selected collection slug.
+	 * @return string[]
+	 */
+	private function get_categories( $collection_slug ) {
+		$categories = array();
+		$slugs      = $collection_slug ? array( $collection_slug ) : $this->collection_registry->get_enabled_collection_slugs();
+
+		foreach ( $slugs as $slug ) {
+			$manifest = $this->manifest_loader->get_manifest( $slug );
+
+			if ( empty( $manifest['icons'] ) || ! is_array( $manifest['icons'] ) ) {
+				continue;
+			}
+
+			foreach ( $manifest['icons'] as $icon ) {
+				if ( ! empty( $icon['categories'] ) && is_array( $icon['categories'] ) ) {
+					$categories = array_merge( $categories, array_map( 'sanitize_key', $icon['categories'] ) );
+				}
+			}
+		}
+
+		$categories = array_values( array_unique( array_filter( $categories ) ) );
+		sort( $categories );
+
+		return $categories;
 	}
 
 	/**
