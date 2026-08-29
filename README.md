@@ -24,7 +24,7 @@ contents lazily when the REST API or renderer requests them.
 ## Manifest Shape
 
 Bundled collections live under `assets/icons/{collection}/manifest.json`.
-Each icon has an internal collection ID and a core-compatible ID:
+Each icon has an internal collection ID, a Core-compatible ID, and a checksum:
 
 ```json
 {
@@ -34,7 +34,8 @@ Each icon has an internal collection ID and a core-compatible ID:
   "variant": "24-outline",
   "categories": ["general"],
   "keywords": ["academic", "cap"],
-  "path": "24-outline/academic-cap.svg"
+  "path": "24-solid/academic-cap.svg",
+  "sha256": "..."
 }
 ```
 
@@ -56,4 +57,5 @@ the native WordPress `wp/v2/icons` endpoints.
 ```bash
 git clone --depth=1 https://github.com/tailwindlabs/heroicons.git /tmp/heroicons
 php scripts/import-heroicons.php /tmp/heroicons
+php scripts/validate-manifests.php
 ```
