@@ -3,25 +3,23 @@
 Icon Library enables curated SVG icon collections for the native WordPress
 `core/icon` block.
 
-## v0.1 Scope
+## 1.0 Development Scope
 
-- WordPress 7.0+ only.
+- WordPress 7.1+ only.
 - Bundled Heroicons collection.
 - Static manifests and optimized SVG files.
 - Appearance -> Icons activation screen.
-- REST endpoints under `icon-library/v1`.
-- Guarded registration with the current core `WP_Icons_Registry` API.
+- Plugin REST endpoints for collection state management.
+- Registration through the public WordPress SVG Icon API.
 - No uploads, remote marketplace, icon fonts, or competing icon block.
 
-## Core Icon API Notes
+## Core Icon API Integration
 
-The current Gutenberg trunk exposes the Icon block as `core/icon`, uses the
-`root/icon` core-data entity, and serves icons from `wp/v2/icons`. The
-underlying `WP_Icons_Registry::register()` method is still protected, so this
-plugin keeps the reflection bridge isolated in `IconLibrary\CoreIconRegistrar`.
-
-If WordPress 7.0 lands a public third-party icon registration function, that
-adapter should be the only class that needs to change.
+WordPress 7.1 exposes public functions for registering icon collections and
+icons. `IconLibrary\CoreIconRegistrar` maps enabled plugin manifests to
+`wp_register_icon_collection()` and `wp_register_icon()`. Icon SVG files are
+passed by absolute `file_path`, allowing Core to load and sanitize their
+contents lazily when the REST API or renderer requests them.
 
 ## Manifest Shape
 
@@ -48,10 +46,10 @@ The core ID intentionally uses one namespace separator because the current
 - `GET /wp-json/icon-library/v1/collections`
 - `POST /wp-json/icon-library/v1/collections/{slug}/activate`
 - `POST /wp-json/icon-library/v1/collections/{slug}/deactivate`
-- `GET /wp-json/icon-library/v1/icons`
 
 Collection mutations require `manage_options`. Read endpoints require the same
-editor-style access as the core icon endpoint.
+editor-style access as the Core icon endpoint. Icon discovery and rendering use
+the native WordPress `wp/v2/icons` endpoints.
 
 ## Importing Heroicons
 

@@ -1,7 +1,7 @@
 === Icon Library ===
 Contributors: mehul0810
 Tags: icons, blocks, svg, editor
-Requires at least: 7.0
+Requires at least: 7.1
 Requires PHP: 7.4
 Stable tag: 0.1.0
 License: GPLv2 or later
@@ -40,5 +40,5 @@ No. Version 0.1 only supports curated bundled collections.
 * Initial plugin foundation.
 * Add bundled Heroicons collection.
 * Add collection activation UI.
-* Add REST endpoints for collections and icon discovery.
-* Add guarded native Icon block registration adapter.
+* Add REST endpoints for collection management.
+* Add native Icon block registration adapter.

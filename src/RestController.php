@@ -28,30 +28,12 @@ class RestController {
 	private $collection_registry;
 
 	/**
-	 * Manifest loader.
-	 *
-	 * @var ManifestLoader
-	 */
-	private $manifest_loader;
-
-	/**
-	 * SVG sanitizer.
-	 *
-	 * @var SvgSanitizer
-	 */
-	private $svg_sanitizer;
-
-	/**
 	 * Constructor.
 	 *
 	 * @param CollectionRegistry $collection_registry Collection registry.
-	 * @param ManifestLoader     $manifest_loader     Manifest loader.
-	 * @param SvgSanitizer       $svg_sanitizer       SVG sanitizer.
 	 */
-	public function __construct( CollectionRegistry $collection_registry, ManifestLoader $manifest_loader, SvgSanitizer $svg_sanitizer ) {
+	public function __construct( CollectionRegistry $collection_registry ) {
 		$this->collection_registry = $collection_registry;
-		$this->manifest_loader     = $manifest_loader;
-		$this->svg_sanitizer       = $svg_sanitizer;
 	}
 
 	/**
@@ -90,17 +72,6 @@ class RestController {
 				'callback'            => array( $this, 'deactivate_collection' ),
 				'permission_callback' => array( $this, 'can_manage_collections' ),
 				'args'                => $this->get_collection_mutation_args(),
-			)
-		);
-
-		register_rest_route(
-			Plugin::REST_NAMESPACE,
-			'/icons',
-			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_icons' ),
-				'permission_callback' => array( $this, 'can_read_icons' ),
-				'args'                => $this->get_icon_collection_args(),
 			)
 		);
 	}
@@ -175,38 +146,6 @@ class RestController {
 	}
 
 	/**
-	 * Returns icon metadata.
-	 *
-	 * @param WP_REST_Request $request REST request.
-	 * @return WP_REST_Response
-	 */
-	public function get_icons( WP_REST_Request $request ) {
-		$include_svg = (bool) $request->get_param( 'include_svg' );
-		$icons       = $this->collection_registry->get_icons(
-			array(
-				'collection' => $request->get_param( 'collection' ),
-				'variant'    => $request->get_param( 'variant' ),
-				'category'   => $request->get_param( 'category' ),
-				'search'     => $request->get_param( 'search' ),
-				'enabled'    => true,
-				'page'       => $request->get_param( 'page' ),
-				'per_page'   => $request->get_param( 'per_page' ),
-			)
-		);
-
-		if ( $include_svg ) {
-			foreach ( $icons as $index => $icon ) {
-				$svg = $this->manifest_loader->get_svg_content( $icon['collection'], $icon['path'] ?? '' );
-				$svg = $this->svg_sanitizer->sanitize( $svg );
-
-				$icons[ $index ]['content'] = $svg;
-			}
-		}
-
-		return rest_ensure_response( $icons );
-	}
-
-	/**
 	 * Updates collection state.
 	 *
 	 * @param WP_REST_Request $request REST request.
@@ -244,49 +183,6 @@ class RestController {
 				'validate_callback' => static function ( $value ) {
 					return is_string( $value ) && 1 === preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $value );
 				},
-			),
-		);
-	}
-
-	/**
-	 * Returns icon collection args.
-	 *
-	 * @return array
-	 */
-	private function get_icon_collection_args() {
-		return array(
-			'collection'  => array(
-				'type'              => 'string',
-				'sanitize_callback' => 'sanitize_key',
-			),
-			'variant'     => array(
-				'type'              => 'string',
-				'sanitize_callback' => 'sanitize_key',
-			),
-			'category'    => array(
-				'type'              => 'string',
-				'sanitize_callback' => 'sanitize_key',
-			),
-			'search'      => array(
-				'type'              => 'string',
-				'sanitize_callback' => 'sanitize_text_field',
-			),
-			'include_svg' => array(
-				'type'    => 'boolean',
-				'default' => false,
-			),
-			'page'        => array(
-				'type'              => 'integer',
-				'default'           => 1,
-				'minimum'           => 1,
-				'sanitize_callback' => 'absint',
-			),
-			'per_page'    => array(
-				'type'              => 'integer',
-				'default'           => 100,
-				'minimum'           => 1,
-				'maximum'           => 100,
-				'sanitize_callback' => 'absint',
 			),
 		);
 	}
