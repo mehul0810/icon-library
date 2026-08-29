@@ -51,6 +51,17 @@ Collection mutations require `manage_options`. Read endpoints require the same
 editor-style access as the Core icon endpoint. Icon discovery and rendering use
 the native WordPress `wp/v2/icons` endpoints.
 
+## Icon Lifecycle
+
+Disabling a collection hides it from Core collection and icon-list discovery,
+so it cannot be selected for new blocks. The plugin continues registering its
+icons, allowing existing saved blocks and individual icon requests to render.
+
+WordPress stores an Icon block's registered name rather than a copy of its SVG.
+Deactivating or uninstalling the provider plugin therefore makes those icons
+unavailable. This Core limitation is tracked upstream in
+https://github.com/WordPress/gutenberg/issues/80668.
+
 ## Importing Heroicons
 
 ```bash
