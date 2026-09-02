@@ -10,7 +10,9 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 delete_option( 'icon_library_enabled_collections' );
+delete_option( 'icon_library_enabled_variants' );
 delete_option( 'icon_library_custom_icons' );
+delete_option( 'icon_library_custom_icons_lock' );
 
 $icon_library_uploads   = wp_upload_dir();
 $icon_library_directory = empty( $icon_library_uploads['error'] ) ? trailingslashit( $icon_library_uploads['basedir'] ) . 'icon-library/custom-icons' : '';

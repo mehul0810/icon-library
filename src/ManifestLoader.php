@@ -91,8 +91,10 @@ class ManifestLoader {
 			return null;
 		}
 
-		$cache_key = 'manifest_' . $slug . '_' . filemtime( $path );
-		$manifest  = wp_cache_get( $cache_key, 'icon_library' );
+		$cache_key = 'manifest_' . $slug;
+		$modified  = filemtime( $path );
+		$cached    = wp_cache_get( $cache_key, 'icon_library' );
+		$manifest  = is_array( $cached ) && isset( $cached['modified'], $cached['manifest'] ) && $modified === $cached['modified'] ? $cached['manifest'] : false;
 
 		if ( false === $manifest ) {
 			if ( function_exists( 'wp_json_file_decode' ) ) {
@@ -106,20 +108,27 @@ class ManifestLoader {
 				return null;
 			}
 
-			/**
-			 * Filters a loaded icon collection manifest.
-			 *
-			 * @param array  $manifest Manifest data.
-			 * @param string $slug     Collection slug.
-			 * @param string $path     Manifest file path.
-			 */
-			$manifest = apply_filters( 'icon_library_icon_manifest', $manifest, $slug, $path );
+			wp_cache_set(
+				$cache_key,
+				array(
+					'modified' => $modified,
+					'manifest' => $manifest,
+				),
+				'icon_library'
+			);
+		}
 
-			if ( ! is_array( $manifest ) || empty( $manifest['slug'] ) || $slug !== $manifest['slug'] ) {
-				return null;
-			}
+		/**
+		 * Filters a loaded icon collection manifest for the current request.
+		 *
+		 * @param array  $manifest Manifest data.
+		 * @param string $slug     Collection slug.
+		 * @param string $path     Manifest file path.
+		 */
+		$manifest = apply_filters( 'icon_library_icon_manifest', $manifest, $slug, $path );
 
-			wp_cache_set( $cache_key, $manifest, 'icon_library' );
+		if ( ! is_array( $manifest ) || empty( $manifest['slug'] ) || $slug !== $manifest['slug'] ) {
+			return null;
 		}
 
 		$this->manifests[ $slug ] = $manifest;

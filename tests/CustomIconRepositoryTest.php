@@ -11,7 +11,7 @@ class CustomIconRepositoryTest extends TestCase {
 	protected function setUp(): void {
 		$GLOBALS['icon_library_test_options']  = array();
 		$GLOBALS['icon_library_test_autoload'] = array();
-		$this->repository = new CustomIconRepository( new SvgSanitizer() );
+		$this->repository                      = new CustomIconRepository( new SvgSanitizer() );
 	}
 
 	protected function tearDown(): void {
@@ -33,5 +33,14 @@ class CustomIconRepositoryTest extends TestCase {
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( array(), $this->repository->get_icons() );
 		$this->assertNull( $this->repository->get_file_path( 'unsafe.svg' ) );
+	}
+
+	public function test_delete_archives_icon_without_removing_saved_block_source() {
+		$this->repository->create( 'retained', 'Retained', '<svg><path d="M0 0h1v1z"/></svg>' );
+		$path = $this->repository->get_file_path( 'retained.svg' );
+
+		$this->assertTrue( $this->repository->delete( 'retained' ) );
+		$this->assertTrue( $this->repository->get_icons()['retained']['archived'] );
+		$this->assertFileExists( $path );
 	}
 }

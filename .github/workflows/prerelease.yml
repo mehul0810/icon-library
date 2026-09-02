@@ -1,0 +1,137 @@
+name: Pre-release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Pre-release tag, for example v1.0.0-rc.1'
+        required: true
+        type: string
+      ref:
+        description: 'Git ref to package'
+        required: false
+        default: release/1.0.0
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prerelease-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Build and publish pre-release
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
+        with:
+          php-version: '8.4'
+          extensions: dom, libxml, zip
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Validate tag and plugin versions
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          plugin_version="$(awk -F': ' '/^[[:space:]]*\*[[:space:]]Version:/ { print $2; exit }' icon-library.php | tr -d '\r')"
+          tag_version="${RELEASE_TAG#v}"
+          if [[ ! "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]; then
+            echo "Invalid pre-release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          base_version="${tag_version%%-*}"
+          if [[ "$base_version" != "$plugin_version" ]]; then
+            echo "Tag $RELEASE_TAG targets plugin $plugin_version" >&2
+            exit 1
+          fi
+          git fetch --force --tags origin
+          if git rev-parse "$RELEASE_TAG^{commit}" >/dev/null 2>&1 && [[ "$(git rev-list -n 1 "$RELEASE_TAG")" != "$(git rev-parse HEAD)" ]]; then
+            echo "Existing tag $RELEASE_TAG points to a different commit." >&2
+            exit 1
+          fi
+          echo "plugin=$plugin_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag_version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Run project checks
+        run: composer check
+
+      - name: Build production ZIP
+        run: composer package
+
+      - name: Validate production ZIP
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="build/icon-library.${{ steps.version.outputs.plugin }}.zip"
+          asset="build/icon-library.${{ steps.version.outputs.tag }}.zip"
+          test -s "$archive"
+          size="$(stat -c '%s' "$archive")"
+          if (( size >= 10485760 )); then
+            echo "WordPress.org submission ZIP is too large: $size bytes" >&2
+            exit 1
+          fi
+          unzip -t "$archive" >/dev/null
+          if unzip -Z1 "$archive" | grep -Eq '^icon-library/(vendor|tests|build|\.git|\.github)(/|$)'; then
+            echo 'Development or repository files were found in the production ZIP.' >&2
+            exit 1
+          fi
+          if [[ "$asset" != "$archive" ]]; then
+            cp "$archive" "$asset"
+          fi
+          echo "archive=$asset" >> "$GITHUB_OUTPUT"
+
+      - name: Extract production ZIP for Plugin Check
+        run: |
+          mkdir -p build/plugin-check
+          unzip -q "${{ steps.package.outputs.archive }}" -d build/plugin-check
+
+      - name: Run WordPress Plugin Check
+        uses: wordpress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1
+        with:
+          build-dir: build/plugin-check/icon-library
+
+      - name: Upload production ZIP
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: icon-library-${{ steps.version.outputs.tag }}
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+      - name: Publish GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" "${{ steps.package.outputs.archive }}" \
+              --target "${{ steps.version.outputs.commit }}" \
+              --prerelease \
+              --generate-notes \
+              --title "Icon Library $RELEASE_TAG"
+          elif [[ "$(git rev-list -n 1 "$RELEASE_TAG" 2>/dev/null || true)" != "${{ steps.version.outputs.commit }}" ]]; then
+            echo "Existing pre-release tag targets a different commit." >&2
+            exit 1
+          else
+            gh release upload "$RELEASE_TAG" "${{ steps.package.outputs.archive }}" --clobber
+          fi

@@ -18,15 +18,18 @@ if ( version_compare( get_bloginfo( 'version' ), '7.1', '<' ) ) {
 	exit( 1 );
 }
 
-$icon_name = 'heroicons/academic-cap-24-solid';
-$svg       = wp_get_icon( $icon_name );
-if ( ! is_string( $svg ) || false === strpos( $svg, '<svg' ) ) {
-	fwrite( STDERR, "The representative Heroicon was not registered.\n" );
-	exit( 1 );
-}
-
-$content = '<!-- wp:icon {"icon":"' . $icon_name . '"} /-->';
-$post_id = wp_insert_post(
+$icon_name        = 'heroicons/academic-cap-solid';
+$legacy_icon_name = 'heroicons/academic-cap-24-solid';
+$outline_name     = 'heroicons/academic-cap-outline';
+$content          = implode(
+	'',
+	array(
+		'<!-- wp:icon {"icon":"' . $icon_name . '"} /-->',
+		'<!-- wp:icon {"icon":"' . $legacy_icon_name . '"} /-->',
+		'<!-- wp:icon {"icon":"' . $outline_name . '"} /-->',
+	)
+);
+$post_id          = wp_insert_post(
 	array(
 		'post_type'    => 'post',
 		'post_status'  => 'draft',
@@ -43,9 +46,19 @@ if ( is_wp_error( $post_id ) ) {
 
 $failure = '';
 try {
-	$stored   = get_post( $post_id );
-	$rendered = $stored ? do_blocks( $stored->post_content ) : '';
-	if ( ! $stored || $content !== $stored->post_content || false === strpos( $rendered, '<svg' ) ) {
+	$stored      = get_post( $post_id );
+	$rendered    = $stored ? do_blocks( $stored->post_content ) : '';
+	$svg         = wp_get_icon( $icon_name );
+	$legacy_svg  = wp_get_icon( $legacy_icon_name );
+	$outline_svg = wp_get_icon( $outline_name );
+	if (
+		! $stored || $content !== $stored->post_content ||
+		! is_string( $svg ) || false === strpos( $svg, '<svg' ) ||
+		! is_string( $legacy_svg ) || false === strpos( $legacy_svg, '<svg' ) ||
+		! is_string( $outline_svg ) || false === strpos( $outline_svg, 'icon-library-stroked' ) ||
+		false !== strpos( $outline_svg, 'stroke=' ) ||
+		3 > substr_count( $rendered, '<svg' )
+	) {
 		$failure = 'Icon block save, reload, or frontend rendering failed.';
 	}
 } finally {

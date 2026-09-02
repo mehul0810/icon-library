@@ -2,6 +2,9 @@
 /**
  * Imports Heroicons SVG files into the bundled collection manifest.
  *
+ * Outline is retained as an opt-in experimental variant because WordPress 7.1
+ * strips the stroke attributes required to render it.
+ *
  * Usage: php scripts/import-heroicons.php /path/to/heroicons
  *
  * @package IconLibrary
@@ -36,9 +39,17 @@ if ( 'unknown' === $version || null === $revision ) {
 }
 
 $variants = array(
-	'24-solid' => array(
-		'label'  => '24px Solid',
-		'source' => 'optimized/24/solid',
+	'outline' => array(
+		'label'          => 'Outline',
+		'source'         => 'optimized/24/outline',
+		'coreCompatible' => false,
+		'defaultEnabled' => false,
+	),
+	'solid'   => array(
+		'label'          => 'Solid',
+		'source'         => 'optimized/24/solid',
+		'coreCompatible' => true,
+		'defaultEnabled' => true,
 	),
 );
 
@@ -51,19 +62,17 @@ if ( is_readable( $source_dir . '/LICENSE' ) ) {
 	copy( $source_dir . '/LICENSE', $target_dir . '/LICENSE' );
 }
 
-$icons = array();
+$icons             = array();
+$skipped           = array();
+$manifest_variants = array();
 
 foreach ( $variants as $variant_slug => $variant ) {
-	$source_variant_dir = $source_dir . '/' . $variant['source'];
-	$target_variant_dir = $target_dir . '/' . $variant_slug;
+	$variant_start_count = count( $icons );
+	$source_variant_dir  = $source_dir . '/' . $variant['source'];
+	$target_variant_dir  = $target_dir . '/' . $variant_slug;
 
 	if ( ! is_dir( $source_variant_dir ) ) {
 		fwrite( STDERR, "Missing Heroicons variant: {$variant['source']}\n" );
-		exit( 1 );
-	}
-
-	if ( ! is_dir( $target_variant_dir ) && ! mkdir( $target_variant_dir, 0755, true ) ) {
-		fwrite( STDERR, "Could not create variant directory: {$variant_slug}\n" );
 		exit( 1 );
 	}
 
@@ -75,16 +84,21 @@ foreach ( $variants as $variant_slug => $variant ) {
 		$svg       = file_get_contents( $file );
 
 		try {
-			CollectionBuild::normalize_svg( $svg );
+			CollectionBuild::normalize_svg( $svg, ! $variant['coreCompatible'] );
 		} catch ( RuntimeException $exception ) {
-			fwrite( STDERR, sprintf( 'Incompatible SVG %1$s: %2$s', $file, $exception->getMessage() ) . "\n" );
-			exit( 1 );
+			$skipped[] = $variant_slug . '/' . $base_name . ': ' . $exception->getMessage();
+			continue;
 		}
 
 		$svg = preg_replace( '/\sdata-[a-z0-9_-]+\s*=\s*(["\']).*?\1/is', '', $svg );
 
 		$target_relative = $variant_slug . '/' . $base_name . '.svg';
 		$target_file     = $target_dir . '/' . $target_relative;
+
+		if ( ! is_dir( $target_variant_dir ) && ! mkdir( $target_variant_dir, 0755, true ) ) {
+			fwrite( STDERR, "Could not create variant directory: {$variant_slug}\n" );
+			exit( 1 );
+		}
 
 		if ( false === file_put_contents( $target_file, trim( $svg ) . "\n" ) ) {
 			fwrite( STDERR, "Could not write SVG: {$target_file}\n" );
@@ -100,6 +114,15 @@ foreach ( $variants as $variant_slug => $variant ) {
 			'keywords'     => keywords_from_slug( $base_name ),
 			'path'         => $target_relative,
 			'sha256'       => hash_file( 'sha256', $target_file ),
+		);
+	}
+
+	if ( count( $icons ) > $variant_start_count ) {
+		$manifest_variants[] = array(
+			'slug'           => $variant_slug,
+			'label'          => $variant['label'],
+			'coreCompatible' => (bool) $variant['coreCompatible'],
+			'defaultEnabled' => (bool) $variant['defaultEnabled'],
 		);
 	}
 }
@@ -119,16 +142,7 @@ $manifest = array(
 		'url'      => 'https://github.com/tailwindlabs/heroicons',
 		'revision' => $revision,
 	),
-	'variants'      => array_map(
-		static function ( $slug, $variant ) {
-			return array(
-				'slug'  => $slug,
-				'label' => $variant['label'],
-			);
-		},
-		array_keys( $variants ),
-		$variants
-	),
+	'variants'      => $manifest_variants,
 	'icons'         => $icons,
 );
 
@@ -151,6 +165,9 @@ if ( false === file_put_contents( $temporary, $manifest_json ) || ! rename( $tem
 }
 
 printf( "Imported %d Heroicons into %s\n", count( $icons ), $target_dir );
+if ( $skipped ) {
+	fwrite( STDERR, sprintf( "Skipped %d Core-incompatible icons. First examples: %s\n", count( $skipped ), implode( ', ', array_slice( $skipped, 0, 5 ) ) ) );
+}
 
 /**
  * Converts an icon slug to a label.

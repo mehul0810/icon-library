@@ -74,8 +74,18 @@ class CollectionRegistry {
 	 * @return array|null
 	 */
 	public function get_collection( $slug ) {
-		$collections = $this->get_collections();
-		$slug        = sanitize_key( $slug );
+		$slug     = sanitize_key( $slug );
+		$manifest = $this->get_manifest( $slug );
+		if ( ! is_array( $manifest ) ) {
+			return null;
+		}
+
+		$collections = apply_filters(
+			'icon_library_collections',
+			array(
+				$slug => $this->prepare_collection_summary( $manifest, in_array( $slug, $this->get_enabled_collection_slugs(), true ) ),
+			)
+		);
 
 		return isset( $collections[ $slug ] ) ? $collections[ $slug ] : null;
 	}
@@ -141,7 +151,7 @@ class CollectionRegistry {
 	 */
 	public function get_enabled_collection_slugs() {
 		$available = $this->get_available_collection_slugs();
-		$enabled   = get_option( Plugin::OPTION_ENABLED_COLLECTIONS, array( 'heroicons' ) );
+		$enabled   = get_option( Plugin::OPTION_ENABLED_COLLECTIONS, array() );
 
 		if ( ! is_array( $enabled ) ) {
 			$enabled = array();
@@ -185,6 +195,10 @@ class CollectionRegistry {
 		}
 
 		$enabled_slugs = $this->get_enabled_collection_slugs();
+		$is_enabled    = in_array( $slug, $enabled_slugs, true );
+		if ( (bool) $enabled === $is_enabled ) {
+			return true;
+		}
 
 		if ( $enabled ) {
 			$enabled_slugs[] = $slug;
@@ -194,7 +208,149 @@ class CollectionRegistry {
 
 		$enabled_slugs = array_values( array_unique( array_map( 'sanitize_key', $enabled_slugs ) ) );
 
-		return update_option( Plugin::OPTION_ENABLED_COLLECTIONS, $enabled_slugs, false );
+		if ( update_option( Plugin::OPTION_ENABLED_COLLECTIONS, $enabled_slugs, false ) ) {
+			return true;
+		}
+
+		$stored = get_option( Plugin::OPTION_ENABLED_COLLECTIONS, array() );
+		return is_array( $stored ) && ( in_array( $slug, array_map( 'sanitize_key', $stored ), true ) === (bool) $enabled );
+	}
+
+	/**
+	 * Returns enabled variants for a collection. Missing state enables the
+	 * manifest variants marked as defaults for backwards compatibility.
+	 *
+	 * @param string $slug Collection slug.
+	 * @return string[]
+	 */
+	public function get_enabled_variants( $slug ) {
+		$manifest = $this->get_manifest( sanitize_key( $slug ) );
+		if ( ! is_array( $manifest ) || empty( $manifest['variants'] ) ) {
+			return array();
+		}
+		$available = array_values( array_filter( array_map( 'sanitize_key', wp_list_pluck( $manifest['variants'], 'slug' ) ) ) );
+		$defaults  = array_values(
+			array_filter(
+				array_map(
+					static function ( $variant ) {
+						if ( ! is_array( $variant ) || empty( $variant['slug'] ) || false === ( $variant['defaultEnabled'] ?? true ) ) {
+							return null;
+						}
+						return sanitize_key( $variant['slug'] );
+					},
+					$manifest['variants']
+				)
+			)
+		);
+		$state     = get_option( Plugin::OPTION_ENABLED_VARIANTS, array() );
+		if ( ! is_array( $state ) || ! array_key_exists( sanitize_key( $slug ), $state ) ) {
+			$enabled = $defaults;
+		} else {
+			$enabled = is_array( $state[ sanitize_key( $slug ) ] ) ? $state[ sanitize_key( $slug ) ] : array();
+			$enabled = array_map( 'sanitize_key', $enabled );
+			// The initial Heroicons importer called the 24px Solid style
+			// `24-solid`. Keep that saved preference meaningful after the style
+			// taxonomy moves to `solid`.
+			if ( 'heroicons' === sanitize_key( $slug ) ) {
+				$enabled = array_map(
+					static function ( $variant ) {
+						return '24-solid' === $variant ? 'solid' : $variant;
+					},
+					$enabled
+				);
+			}
+			$enabled = array_values( array_intersect( $available, $enabled ) );
+		}
+
+		/**
+		 * Filters enabled variants for one collection.
+		 *
+		 * @param string[] $enabled Enabled variant slugs.
+		 * @param string   $slug    Collection slug.
+		 */
+		return apply_filters( 'icon_library_enabled_variants', $enabled, sanitize_key( $slug ) );
+	}
+
+	/**
+	 * Updates one variant activation state.
+	 *
+	 * @param string $slug    Collection slug.
+	 * @param string $variant Variant slug.
+	 * @param bool   $enabled Desired state.
+	 * @return bool
+	 */
+	public function set_variant_enabled( $slug, $variant, $enabled ) {
+		$slug       = sanitize_key( $slug );
+		$variant    = sanitize_key( $variant );
+		$collection = $this->get_collection( $slug );
+		if ( ! $collection || ! in_array( $slug, $this->get_enabled_collection_slugs(), true ) ) {
+			return false;
+		}
+		$available_variants = array_map( 'sanitize_key', wp_list_pluck( $collection['variants'], 'slug' ) );
+		if ( ! in_array( $variant, $available_variants, true ) ) {
+			return false;
+		}
+		$state = get_option( Plugin::OPTION_ENABLED_VARIANTS, array() );
+		if ( ! is_array( $state ) ) {
+			$state = array();
+		}
+		$state[ $slug ] = $this->get_enabled_variants( $slug );
+		$is_enabled     = in_array( $variant, $state[ $slug ], true );
+		if ( (bool) $enabled === $is_enabled ) {
+			return true;
+		}
+		if ( $enabled ) {
+			$state[ $slug ][] = $variant;
+		} else {
+			$state[ $slug ] = array_diff( $state[ $slug ], array( $variant ) );
+		}
+		$state[ $slug ] = array_values( array_unique( $state[ $slug ] ) );
+		if ( update_option( Plugin::OPTION_ENABLED_VARIANTS, $state, false ) ) {
+			return true;
+		}
+
+		$stored = get_option( Plugin::OPTION_ENABLED_VARIANTS, array() );
+		return isset( $stored[ $slug ] ) && is_array( $stored[ $slug ] ) && ( in_array( $variant, array_map( 'sanitize_key', $stored[ $slug ] ), true ) === (bool) $enabled );
+	}
+
+	/**
+	 * Returns one paginated icon query with totals and variant facets.
+	 *
+	 * @param array $args Query args.
+	 * @return array{items:array,total:int,variant_counts:array}
+	 */
+	public function query_icons( $args = array() ) {
+		$args                  = $this->prepare_icon_query_args( $args );
+		$variant               = $args['variant'];
+		$facet_args            = $args;
+		$facet_args['variant'] = '';
+		$matching              = $this->get_filtered_icons( $facet_args );
+		$counts                = array();
+
+		foreach ( $matching as $icon ) {
+			$icon_variant = sanitize_key( $icon['variant'] ?? '' );
+			if ( $icon_variant ) {
+				$counts[ $icon_variant ] = ( $counts[ $icon_variant ] ?? 0 ) + 1;
+			}
+		}
+
+		if ( $variant ) {
+			$matching = array_values(
+				array_filter(
+					$matching,
+					static function ( $icon ) use ( $variant ) {
+						return sanitize_key( $icon['variant'] ?? '' ) === $variant;
+					}
+				)
+			);
+		}
+
+		$offset = ( $args['page'] - 1 ) * $args['per_page'];
+		return array(
+			'items'          => array_slice( $matching, $offset, $args['per_page'] ),
+			'total'          => count( $matching ),
+			'variant_counts' => $counts,
+		);
 	}
 
 	/**
@@ -204,6 +360,42 @@ class CollectionRegistry {
 	 * @return array[]
 	 */
 	public function get_icons( $args = array() ) {
+		$query = $this->query_icons( $args );
+		return $query['items'];
+	}
+
+	/**
+	 * Counts icons matching query args before pagination.
+	 *
+	 * @param array $args Query args.
+	 * @return int
+	 */
+	public function count_icons( $args = array() ) {
+		$query = $this->query_icons( $args );
+		return $query['total'];
+	}
+
+	/**
+	 * Counts matching icons grouped by variant.
+	 *
+	 * The variant filter is intentionally ignored so callers can render a
+	 * variant selector whose counts reflect the other active filters.
+	 *
+	 * @param array $args Query args.
+	 * @return int[] Counts keyed by variant slug.
+	 */
+	public function count_icons_by_variant( $args = array() ) {
+		$query = $this->query_icons( $args );
+		return $query['variant_counts'];
+	}
+
+	/**
+	 * Normalizes icon query arguments.
+	 *
+	 * @param array $args Query args.
+	 * @return array
+	 */
+	private function prepare_icon_query_args( $args ) {
 		$args = wp_parse_args(
 			$args,
 			array(
@@ -217,16 +409,32 @@ class CollectionRegistry {
 			)
 		);
 
-		$collection_filter = sanitize_key( $args['collection'] );
-		$variant_filter    = sanitize_key( $args['variant'] );
-		$category_filter   = sanitize_key( $args['category'] );
-		$search            = strtolower( sanitize_text_field( $args['search'] ) );
-		$page              = max( 1, absint( $args['page'] ) );
-		$per_page          = min( 100, max( 1, absint( $args['per_page'] ) ) );
+		$args['collection'] = sanitize_key( $args['collection'] );
+		$args['variant']    = sanitize_key( $args['variant'] );
+		$args['category']   = sanitize_key( $args['category'] );
+		$args['search']     = $this->lowercase( sanitize_text_field( $args['search'] ) );
+		$args['page']       = max( 1, absint( $args['page'] ) );
+		$args['per_page']   = min( 100, max( 1, absint( $args['per_page'] ) ) );
+
+		return $args;
+	}
+
+	/**
+	 * Returns all icons matching normalized query arguments.
+	 *
+	 * @param array $args Normalized query args.
+	 * @return array[]
+	 */
+	private function get_filtered_icons( $args ) {
+		$collection_filter = $args['collection'];
+		$variant_filter    = $args['variant'];
+		$category_filter   = $args['category'];
+		$search            = $args['search'];
 		$enabled_slugs     = $this->get_enabled_collection_slugs();
 		$icons             = array();
 
-		foreach ( $this->get_collections() as $collection_slug => $collection ) {
+		$collections = $collection_filter ? array_filter( array( $collection_filter => $this->get_collection( $collection_filter ) ) ) : $this->get_collections();
+		foreach ( $collections as $collection_slug => $collection ) {
 			if ( $collection_filter && $collection_filter !== $collection_slug ) {
 				continue;
 			}
@@ -247,6 +455,9 @@ class CollectionRegistry {
 
 			foreach ( $manifest['icons'] as $icon ) {
 				if ( ! is_array( $icon ) || empty( $icon['id'] ) || empty( $icon['coreIconName'] ) ) {
+					continue;
+				}
+				if ( ! empty( $icon['archived'] ) ) {
 					continue;
 				}
 
@@ -274,7 +485,7 @@ class CollectionRegistry {
 			}
 		}
 
-		return array_slice( $icons, ( $page - 1 ) * $per_page, $per_page );
+		return $icons;
 	}
 
 	/**
@@ -322,7 +533,17 @@ class CollectionRegistry {
 			}
 		}
 
-		return false !== strpos( strtolower( implode( ' ', array_map( 'strval', $haystack ) ) ), $search );
+		return false !== strpos( $this->lowercase( implode( ' ', array_map( 'strval', $haystack ) ) ), $search );
+	}
+
+	/**
+	 * Lowercases searchable text with Unicode support when available.
+	 *
+	 * @param string $value Text value.
+	 * @return string
+	 */
+	private function lowercase( $value ) {
+		return function_exists( 'mb_strtolower' ) ? mb_strtolower( (string) $value, 'UTF-8' ) : strtolower( (string) $value );
 	}
 
 	/**
@@ -333,8 +554,23 @@ class CollectionRegistry {
 	 * @return array
 	 */
 	private function prepare_collection_summary( $manifest, $enabled ) {
-		$icons    = isset( $manifest['icons'] ) && is_array( $manifest['icons'] ) ? $manifest['icons'] : array();
-		$variants = isset( $manifest['variants'] ) && is_array( $manifest['variants'] ) ? $manifest['variants'] : array();
+		$icons            = isset( $manifest['icons'] ) && is_array( $manifest['icons'] ) ? array_values(
+			array_filter(
+				$manifest['icons'],
+				static function ( $icon ) {
+					return empty( $icon['archived'] );
+				}
+			)
+		) : array();
+		$variants         = isset( $manifest['variants'] ) && is_array( $manifest['variants'] ) ? $manifest['variants'] : array();
+		$enabled_variants = $this->get_enabled_variants( $manifest['slug'] ?? '' );
+		$variants         = array_map(
+			static function ( $variant ) use ( $enabled_variants ) {
+				$variant['enabled'] = in_array( sanitize_key( $variant['slug'] ?? '' ), $enabled_variants, true );
+				return $variant;
+			},
+			$variants
+		);
 
 		return array(
 			'slug'        => sanitize_key( $manifest['slug'] ?? '' ),
@@ -344,6 +580,7 @@ class CollectionRegistry {
 			'license'     => $manifest['license'] ?? array(),
 			'source'      => $manifest['source'] ?? array(),
 			'variants'    => $variants,
+			'categories'  => isset( $manifest['categories'] ) && is_array( $manifest['categories'] ) ? $manifest['categories'] : array(),
 			'iconCount'   => count( $icons ),
 			'enabled'     => (bool) $enabled,
 		);

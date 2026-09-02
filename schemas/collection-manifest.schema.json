@@ -31,7 +31,23 @@
         "required": ["slug", "label"],
         "properties": {
           "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-          "label": { "type": "string", "minLength": 1 }
+          "label": { "type": "string", "minLength": 1 },
+          "iconCount": { "type": "integer", "minimum": 0 },
+          "coreCompatible": { "type": "boolean", "default": true },
+          "defaultEnabled": { "type": "boolean", "default": true }
+        }
+      }
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slug", "label", "iconCount"],
+        "properties": {
+          "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "label": { "type": "string", "minLength": 1 },
+          "iconCount": { "type": "integer", "minimum": 0 }
         }
       }
     },

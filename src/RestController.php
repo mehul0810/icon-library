@@ -84,6 +84,19 @@ class RestController {
 			)
 		);
 
+		foreach ( array( 'activate', 'deactivate' ) as $state ) {
+			register_rest_route(
+				Plugin::REST_NAMESPACE,
+				'/collections/(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)/variants/(?P<variant>[a-z0-9]+(?:-[a-z0-9]+)*)/' . $state,
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'activate' === $state ? 'activate_variant' : 'deactivate_variant' ),
+					'permission_callback' => array( $this, 'can_manage_collections' ),
+					'args'                => $this->get_variant_mutation_args(),
+				)
+			);
+		}
+
 		register_rest_route(
 			Plugin::REST_NAMESPACE,
 			'/custom-icons',
@@ -93,16 +106,19 @@ class RestController {
 				'permission_callback' => array( $this, 'can_manage_collections' ),
 				'args'                => array(
 					'name'  => array(
-						'type'     => 'string',
-						'required' => true,
+						'type'      => 'string',
+						'required'  => true,
+						'maxLength' => 100,
 					),
 					'label' => array(
-						'type'     => 'string',
-						'required' => true,
+						'type'      => 'string',
+						'required'  => true,
+						'maxLength' => 200,
 					),
 					'svg'   => array(
-						'type'     => 'string',
-						'required' => true,
+						'type'      => 'string',
+						'required'  => true,
+						'maxLength' => SvgSanitizer::MAX_FILE_SIZE,
 					),
 				),
 			)
@@ -118,8 +134,9 @@ class RestController {
 					'permission_callback' => array( $this, 'can_manage_collections' ),
 					'args'                => array(
 						'label' => array(
-							'type'     => 'string',
-							'required' => true,
+							'type'      => 'string',
+							'required'  => true,
+							'maxLength' => 200,
 						),
 					),
 				),
@@ -204,7 +221,7 @@ class RestController {
 
 		return new WP_Error(
 			'icon_library_rest_cannot_manage',
-			__( 'Sorry, you are not allowed to manage icon collections.', 'icon-library' ),
+			__( 'Sorry, you are not allowed to manage icon libraries.', 'icon-library' ),
 			array( 'status' => rest_authorization_required_code() )
 		);
 	}
@@ -239,6 +256,50 @@ class RestController {
 	}
 
 	/**
+	 * Activates one collection variant.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function activate_variant( WP_REST_Request $request ) {
+		return $this->set_variant_state( $request, true );
+	}
+
+	/**
+	 * Deactivates one collection variant.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function deactivate_variant( WP_REST_Request $request ) {
+		return $this->set_variant_state( $request, false );
+	}
+
+	/**
+	 * Updates one variant state.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @param bool            $enabled Desired enabled state.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	private function set_variant_state( WP_REST_Request $request, $enabled ) {
+		$slug       = sanitize_key( $request['slug'] );
+		$variant    = sanitize_key( $request['variant'] );
+		$collection = $this->collection_registry->get_collection( $slug );
+		$variants   = null === $collection ? array() : array_map( 'sanitize_key', wp_list_pluck( $collection['variants'] ?? array(), 'slug' ) );
+		if ( null === $collection || ! in_array( $variant, $variants, true ) ) {
+			return new WP_Error( 'icon_library_variant_not_found', __( 'Icon library variant not found.', 'icon-library' ), array( 'status' => 404 ) );
+		}
+		if ( empty( $collection['enabled'] ) ) {
+			return new WP_Error( 'icon_library_collection_not_installed', __( 'Install the icon library before changing its variants.', 'icon-library' ), array( 'status' => 409 ) );
+		}
+		if ( ! $this->collection_registry->set_variant_enabled( $slug, $variant, $enabled ) ) {
+			return new WP_Error( 'icon_library_variant_update_failed', __( 'The icon library variant could not be updated.', 'icon-library' ), array( 'status' => 500 ) );
+		}
+		return rest_ensure_response( $this->collection_registry->get_collection( $slug ) );
+	}
+
+	/**
 	 * Updates collection state.
 	 *
 	 * @param WP_REST_Request $request REST request.
@@ -252,12 +313,14 @@ class RestController {
 		if ( null === $collection ) {
 			return new WP_Error(
 				'icon_library_collection_not_found',
-				__( 'Icon collection not found.', 'icon-library' ),
+				__( 'Icon library not found.', 'icon-library' ),
 				array( 'status' => 404 )
 			);
 		}
 
-		$this->collection_registry->set_collection_enabled( $slug, $enabled );
+		if ( ! $this->collection_registry->set_collection_enabled( $slug, $enabled ) ) {
+			return new WP_Error( 'icon_library_collection_update_failed', __( 'The icon library could not be updated.', 'icon-library' ), array( 'status' => 500 ) );
+		}
 
 		return rest_ensure_response( $this->collection_registry->get_collection( $slug ) );
 	}
@@ -270,12 +333,30 @@ class RestController {
 	private function get_collection_mutation_args() {
 		return array(
 			'slug' => array(
-				'description'       => __( 'Collection slug.', 'icon-library' ),
+				'description'       => __( 'Library slug.', 'icon-library' ),
 				'type'              => 'string',
 				'required'          => true,
 				'validate_callback' => static function ( $value ) {
 					return is_string( $value ) && 1 === preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $value );
 				},
+			),
+		);
+	}
+
+	/**
+	 * Returns variant mutation args.
+	 *
+	 * @return array
+	 */
+	private function get_variant_mutation_args() {
+		return array(
+			'slug'    => array(
+				'type'     => 'string',
+				'required' => true,
+			),
+			'variant' => array(
+				'type'     => 'string',
+				'required' => true,
 			),
 		);
 	}
@@ -314,6 +395,58 @@ class RestController {
 				'enabled'     => array(
 					'type'     => 'boolean',
 					'readonly' => true,
+				),
+				'variants'    => array(
+					'type'  => 'array',
+					'items' => array(
+						'type'       => 'object',
+						'properties' => array(
+							'slug'           => array(
+								'type'     => 'string',
+								'readonly' => true,
+							),
+							'label'          => array(
+								'type'     => 'string',
+								'readonly' => true,
+							),
+							'iconCount'      => array(
+								'type'     => 'integer',
+								'readonly' => true,
+							),
+							'coreCompatible' => array(
+								'type'     => 'boolean',
+								'readonly' => true,
+							),
+							'defaultEnabled' => array(
+								'type'     => 'boolean',
+								'readonly' => true,
+							),
+							'enabled'        => array(
+								'type'     => 'boolean',
+								'readonly' => true,
+							),
+						),
+					),
+				),
+				'categories'  => array(
+					'type'  => 'array',
+					'items' => array(
+						'type'       => 'object',
+						'properties' => array(
+							'slug'      => array(
+								'type'     => 'string',
+								'readonly' => true,
+							),
+							'label'     => array(
+								'type'     => 'string',
+								'readonly' => true,
+							),
+							'iconCount' => array(
+								'type'     => 'integer',
+								'readonly' => true,
+							),
+						),
+					),
 				),
 			),
 		);

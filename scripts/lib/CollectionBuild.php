@@ -29,13 +29,29 @@ final class CollectionBuild {
 	);
 
 	/**
+	 * Build-time allowlist for experimental stroked icons.
+	 *
+	 * WordPress 7.1 does not preserve these attributes at runtime. Keeping the
+	 * source allowlist narrow lets us inspect that Core behavior without allowing
+	 * scripts, external references, or arbitrary SVG elements into the bundle.
+	 *
+	 * @var array<string,string[]>
+	 */
+	private const ALLOWED_STROKED_SVG = array(
+		'svg'     => array( 'class', 'xmlns', 'width', 'height', 'viewbox', 'aria-hidden', 'role', 'focusable', 'fill', 'stroke', 'stroke-linecap', 'stroke-linejoin', 'stroke-width' ),
+		'path'    => array( 'fill', 'fill-rule', 'd', 'transform', 'stroke', 'stroke-linecap', 'stroke-linejoin', 'stroke-width' ),
+		'polygon' => array( 'fill', 'fill-rule', 'points', 'transform', 'focusable', 'stroke', 'stroke-linecap', 'stroke-linejoin', 'stroke-width' ),
+	);
+
+	/**
 	 * Normalizes a trusted upstream SVG or throws when Core would alter it.
 	 *
-	 * @param string $svg SVG markup.
+	 * @param string $svg          SVG markup.
+	 * @param bool   $allow_stroke Preserve the narrow stroked-icon allowlist.
 	 * @return string
 	 * @throws RuntimeException When SVG markup is incompatible.
 	 */
-	public static function normalize_svg( $svg ) {
+	public static function normalize_svg( $svg, $allow_stroke = false ) {
 		if ( ! is_string( $svg ) || '' === trim( $svg ) ) {
 			throw new RuntimeException( 'SVG content is empty.' );
 		}
@@ -54,13 +70,24 @@ final class CollectionBuild {
 			throw new RuntimeException( 'SVG markup is not a valid SVG document.' );
 		}
 
+		$xpath    = new \DOMXPath( $document );
+		$comments = $xpath->query( '//comment()' );
+		if ( $comments ) {
+			foreach ( $comments as $comment ) {
+				if ( $comment->parentNode ) {
+					$comment->parentNode->removeChild( $comment );
+				}
+			}
+		}
+
+		$allowed_svg    = $allow_stroke ? self::ALLOWED_STROKED_SVG : self::ALLOWED_SVG;
 		$geometry_count = 0;
 		$elements       = $document->getElementsByTagName( '*' );
 
 		foreach ( $elements as $element ) {
 			$tag = strtolower( $element->tagName );
 
-			if ( ! isset( self::ALLOWED_SVG[ $tag ] ) ) {
+			if ( ! isset( $allowed_svg[ $tag ] ) ) {
 				throw new RuntimeException( sprintf( 'Unsupported SVG element: %s.', $tag ) );
 			}
 
@@ -72,8 +99,14 @@ final class CollectionBuild {
 
 			foreach ( iterator_to_array( $element->attributes ) as $attribute ) {
 				$name = strtolower( $attribute->name );
+				if ( $attribute->namespaceURI && 'http://www.w3.org/2000/xmlns/' !== $attribute->namespaceURI ) {
+					throw new RuntimeException( 'Namespaced SVG attributes are not supported.' );
+				}
+				if ( 1 === preg_match( '/(?:url\s*\(|javascript:|data:|https?:|\/\/)/i', $attribute->value ) ) {
+					throw new RuntimeException( 'External or executable SVG references are not allowed.' );
+				}
 
-				if ( in_array( $name, self::ALLOWED_SVG[ $tag ], true ) ) {
+				if ( in_array( $name, $allowed_svg[ $tag ], true ) ) {
 					continue;
 				}
 
@@ -147,6 +180,52 @@ final class CollectionBuild {
 			$errors[] = 'Source metadata requires a full Git commit revision.';
 		}
 
+		$variant_slugs = array();
+		foreach ( (array) ( $manifest['variants'] ?? array() ) as $variant_index => $variant ) {
+			$prefix = sprintf( 'variants[%d]', $variant_index );
+			if ( ! is_array( $variant ) || empty( $variant['slug'] ) || empty( $variant['label'] ) ) {
+				$errors[] = $prefix . ' requires slug and label.';
+				continue;
+			}
+			$variant_slug = (string) $variant['slug'];
+			if ( isset( $variant_slugs[ $variant_slug ] ) ) {
+				$errors[] = sprintf( 'Duplicate variant slug: %s.', $variant_slug );
+			}
+			if ( array_key_exists( 'iconCount', $variant ) && ( ! is_int( $variant['iconCount'] ) || $variant['iconCount'] < 0 ) ) {
+				$errors[] = $prefix . ' iconCount must be a non-negative integer.';
+			}
+			$variant_slugs[ $variant_slug ] = false !== ( $variant['coreCompatible'] ?? true );
+		}
+
+		if ( array_key_exists( 'categories', $manifest ) ) {
+			$category_slugs = array();
+			if ( ! is_array( $manifest['categories'] ) ) {
+				$errors[] = 'Manifest categories must be an array.';
+			} else {
+				foreach ( $manifest['categories'] as $category_index => $category ) {
+					$prefix = sprintf( 'categories[%d]', $category_index );
+					if ( ! is_array( $category ) || empty( $category['slug'] ) || empty( $category['label'] ) || ! array_key_exists( 'iconCount', $category ) ) {
+						$errors[] = $prefix . ' requires slug, label, and iconCount.';
+						continue;
+					}
+					$category_slug = (string) $category['slug'];
+					if ( isset( $category_slugs[ $category_slug ] ) ) {
+						$errors[] = sprintf( 'Duplicate category slug: %s.', $category_slug );
+					}
+					if ( 1 !== preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $category_slug ) ) {
+						$errors[] = sprintf( '%s has an invalid slug.', $prefix );
+					}
+					if ( ! is_string( $category['label'] ) || '' === trim( $category['label'] ) ) {
+						$errors[] = sprintf( '%s label must be a non-empty string.', $prefix );
+					}
+					if ( ! is_int( $category['iconCount'] ) || $category['iconCount'] < 0 ) {
+						$errors[] = sprintf( '%s iconCount must be a non-negative integer.', $prefix );
+					}
+					$category_slugs[ $category_slug ] = true;
+				}
+			}
+		}
+
 		if ( empty( $manifest['icons'] ) || ! is_array( $manifest['icons'] ) ) {
 			$errors[] = 'Manifest must contain at least one icon.';
 			return $errors;
@@ -169,8 +248,9 @@ final class CollectionBuild {
 				}
 			}
 
-			$id   = $icon['id'] ?? '';
-			$name = $icon['coreIconName'] ?? '';
+			$id      = $icon['id'] ?? '';
+			$name    = $icon['coreIconName'] ?? '';
+			$variant = (string) ( $icon['variant'] ?? '' );
 
 			if ( isset( $ids[ $id ] ) ) {
 				$errors[] = sprintf( 'Duplicate icon id: %s.', $id );
@@ -184,6 +264,9 @@ final class CollectionBuild {
 			if ( ! is_string( $name ) || 1 !== preg_match( '/^' . preg_quote( (string) $slug, '/' ) . '\/[a-z0-9]+(?:[-_][a-z0-9]+)*$/', $name ) ) {
 				$errors[] = sprintf( '%s has an invalid Core icon name.', $prefix );
 			}
+			if ( ! isset( $variant_slugs[ $variant ] ) ) {
+				$errors[] = sprintf( '%s references an unknown variant.', $prefix );
+			}
 
 			$path = self::resolve_svg_path( $collection_dir, $icon['path'] ?? '' );
 			if ( null === $path ) {
@@ -193,7 +276,7 @@ final class CollectionBuild {
 
 			$content = file_get_contents( $path );
 			try {
-				self::normalize_svg( $content );
+				self::normalize_svg( $content, isset( $variant_slugs[ $variant ] ) && ! $variant_slugs[ $variant ] );
 			} catch ( RuntimeException $exception ) {
 				$errors[] = sprintf( '%1$s SVG is incompatible: %2$s', $prefix, $exception->getMessage() );
 			}

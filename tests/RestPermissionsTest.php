@@ -24,4 +24,25 @@ class RestPermissionsTest extends TestCase {
 		$GLOBALS['icon_library_test_capabilities'] = array( 'manage_options' => true );
 		$this->assertTrue( $this->controller()->can_manage_collections() );
 	}
+
+	public function test_repeated_variant_state_is_an_idempotent_success() {
+		$registry = $this->getMockBuilder( CollectionRegistry::class )->disableOriginalConstructor()->onlyMethods( array( 'get_collection', 'set_variant_enabled' ) )->getMock();
+		$registry->method( 'get_collection' )->willReturn( array( 'enabled' => true, 'variants' => array( array( 'slug' => 'solid' ) ) ) );
+		$registry->expects( $this->once() )->method( 'set_variant_enabled' )->willReturn( true );
+		$custom = $this->getMockBuilder( CustomIconRepository::class )->disableOriginalConstructor()->getMock();
+		$result = ( new RestController( $registry, $custom ) )->activate_variant( new WP_REST_Request( 'POST', '', array( 'slug' => 'test', 'variant' => 'solid' ) ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $result );
+	}
+
+	public function test_variant_write_failure_is_not_reported_as_not_found() {
+		$registry = $this->getMockBuilder( CollectionRegistry::class )->disableOriginalConstructor()->onlyMethods( array( 'get_collection', 'set_variant_enabled' ) )->getMock();
+		$registry->method( 'get_collection' )->willReturn( array( 'enabled' => true, 'variants' => array( array( 'slug' => 'solid' ) ) ) );
+		$registry->method( 'set_variant_enabled' )->willReturn( false );
+		$custom = $this->getMockBuilder( CustomIconRepository::class )->disableOriginalConstructor()->getMock();
+		$result = ( new RestController( $registry, $custom ) )->activate_variant( new WP_REST_Request( 'POST', '', array( 'slug' => 'test', 'variant' => 'solid' ) ) );
+
+		$this->assertSame( 'icon_library_variant_update_failed', $result->get_error_code() );
+		$this->assertSame( 500, $result->get_error_data()['status'] );
+	}
 }

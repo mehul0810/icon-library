@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Stable release tag, for example v1.0.0'
+        required: true
+        type: string
+      ref:
+        description: 'Git ref to package'
+        required: false
+        default: release/1.0.0
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
+        with:
+          php-version: '8.4'
+          extensions: dom, libxml, zip
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Validate tag and plugin versions
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          plugin_version="$(awk -F': ' '/^[[:space:]]*\*[[:space:]]Version:/ { print $2; exit }' icon-library.php | tr -d '\r')"
+          tag_version="${RELEASE_TAG#v}"
+          if [[ ! "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid stable release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          if [[ "$tag_version" != "$plugin_version" ]]; then
+            echo "Tag $RELEASE_TAG does not match plugin version $plugin_version" >&2
+            exit 1
+          fi
+          git fetch --force --tags origin
+          tagged_commit="$(git rev-list -n 1 "$RELEASE_TAG" 2>/dev/null || true)"
+          if [[ -z "$tagged_commit" || "$tagged_commit" != "$(git rev-parse HEAD)" ]]; then
+            echo "Tag $RELEASE_TAG must already point to the checked-out commit." >&2
+            exit 1
+          fi
+          echo "plugin=$plugin_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag_version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Run project checks
+        run: composer check
+
+      - name: Build production ZIP
+        run: composer package
+
+      - name: Validate production ZIP
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="build/icon-library.${{ steps.version.outputs.plugin }}.zip"
+          test -s "$archive"
+          size="$(stat -c '%s' "$archive")"
+          if (( size >= 10485760 )); then
+            echo "WordPress.org submission ZIP is too large: $size bytes" >&2
+            exit 1
+          fi
+          unzip -t "$archive" >/dev/null
+          if unzip -Z1 "$archive" | grep -Eq '^icon-library/(vendor|tests|build|\.git|\.github)(/|$)'; then
+            echo 'Development or repository files were found in the production ZIP.' >&2
+            exit 1
+          fi
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Extract production ZIP for Plugin Check
+        run: |
+          mkdir -p build/plugin-check
+          unzip -q "${{ steps.package.outputs.archive }}" -d build/plugin-check
+
+      - name: Run WordPress Plugin Check
+        uses: wordpress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1
+        with:
+          build-dir: build/plugin-check/icon-library
+
+      - name: Upload production ZIP
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: icon-library-${{ steps.version.outputs.tag }}
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; stable release assets are immutable." >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" "${{ steps.package.outputs.archive }}" \
+            --target "${{ steps.version.outputs.commit }}" \
+            --generate-notes \
+            --latest \
+            --title "Icon Library $RELEASE_TAG"

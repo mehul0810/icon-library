@@ -25,13 +25,6 @@ if ( ! preg_match( '/^Stable tag:\s*(\S+)/mi', $readme, $stable_match ) || $vers
 	exit( 1 );
 }
 
-$manifest_path = $root . '/assets/icons/heroicons/manifest.json';
-$manifest      = json_decode( file_get_contents( $manifest_path ), true );
-if ( ! is_array( $manifest ) || empty( $manifest['icons'] ) ) {
-	fwrite( STDERR, "Heroicons manifest is invalid.\n" );
-	exit( 1 );
-}
-
 $files = array(
 	'.' => array(
 		'icon-library.php',
@@ -39,22 +32,42 @@ $files = array(
 		'readme.txt',
 		'README.md',
 		'LICENSE.md',
+		'composer.json',
 		'assets/admin.css',
 		'assets/admin.js',
-		'assets/icons/heroicons/LICENSE',
-		'assets/icons/heroicons/manifest.json',
+		'assets/icons.css',
 	),
 );
 
 foreach ( glob( $root . '/src/*.php' ) as $source_file ) {
 	$files['.'][] = substr( $source_file, strlen( $root ) + 1 );
 }
-foreach ( $manifest['icons'] as $icon ) {
-	if ( empty( $icon['path'] ) || false !== strpos( $icon['path'], '..' ) ) {
-		fwrite( STDERR, "Manifest contains an unsafe icon path.\n" );
+foreach ( glob( $root . '/assets/icons/*/manifest.json' ) as $manifest_path ) {
+	$collection = basename( dirname( $manifest_path ) );
+	$manifest   = json_decode( file_get_contents( $manifest_path ), true );
+	if ( ! is_array( $manifest ) || empty( $manifest['icons'] ) || $collection !== $manifest['slug'] ) {
+		fwrite( STDERR, sprintf( "Collection manifest is invalid: %s\n", $collection ) );
 		exit( 1 );
 	}
-	$files['.'][] = 'assets/icons/heroicons/' . $icon['path'];
+	$files['.'][] = 'assets/icons/' . $collection . '/manifest.json';
+	$files['.'][] = 'assets/icons/' . $collection . '/LICENSE';
+	foreach ( $manifest['icons'] as $icon ) {
+		if ( empty( $icon['path'] ) || false !== strpos( $icon['path'], '..' ) ) {
+			fwrite( STDERR, "Manifest contains an unsafe icon path.\n" );
+			exit( 1 );
+		}
+		$files['.'][] = 'assets/icons/' . $collection . '/' . $icon['path'];
+	}
+
+	// Keep the old Heroicons size paths available for blocks saved before the
+	// collection moved to style-based variants.
+	if ( 'heroicons' === $collection ) {
+		foreach ( array( '16-solid', '20-solid', '24-solid' ) as $legacy_variant ) {
+			foreach ( glob( $root . '/assets/icons/heroicons/' . $legacy_variant . '/*.svg' ) as $legacy_file ) {
+				$files['.'][] = 'assets/icons/heroicons/' . $legacy_variant . '/' . basename( $legacy_file );
+			}
+		}
+	}
 }
 
 $files = array_values( array_unique( $files['.'] ) );
