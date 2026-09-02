@@ -470,8 +470,8 @@ class AdminPage {
 				printf(
 					/* translators: 1: number of icons loaded, 2: total matching icons. */
 					esc_html__( 'Loaded %1$s of %2$s icons.', 'icon-library' ),
-					number_format_i18n( $loaded ),
-					number_format_i18n( $total )
+					esc_html( number_format_i18n( $loaded ) ),
+					esc_html( number_format_i18n( $total ) )
 				);
 				?>
 			</span>

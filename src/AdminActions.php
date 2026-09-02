@@ -39,7 +39,8 @@ class AdminActions {
 
 	/** Handles a collection activation toggle. */
 	public function toggle_collection() {
-		$this->authorize( 'icon_library_toggle_collection' );
+		$this->authorize();
+		check_admin_referer( 'icon_library_toggle_collection' );
 		$collection = isset( $_POST['collection'] ) ? sanitize_key( wp_unslash( $_POST['collection'] ) ) : '';
 		$state      = isset( $_POST['state'] ) ? sanitize_key( wp_unslash( $_POST['state'] ) ) : '';
 		$result     = in_array( $state, array( 'activate', 'deactivate' ), true ) && $this->collection_registry->set_collection_enabled( $collection, 'activate' === $state );
@@ -49,7 +50,8 @@ class AdminActions {
 
 	/** Handles a collection variant activation toggle. */
 	public function toggle_variant() {
-		$this->authorize( 'icon_library_toggle_variant' );
+		$this->authorize();
+		check_admin_referer( 'icon_library_toggle_variant' );
 		$collection = isset( $_POST['collection'] ) ? sanitize_key( wp_unslash( $_POST['collection'] ) ) : '';
 		$variant    = isset( $_POST['variant'] ) ? sanitize_key( wp_unslash( $_POST['variant'] ) ) : '';
 		$state      = isset( $_POST['state'] ) ? sanitize_key( wp_unslash( $_POST['state'] ) ) : '';
@@ -65,15 +67,12 @@ class AdminActions {
 	}
 
 	/**
-	 * Enforces capability and nonce checks.
-	 *
-	 * @param string $nonce_action Nonce action.
+	 * Enforces the capability check shared by mutation handlers.
 	 */
-	private function authorize( $nonce_action ) {
+	private function authorize() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'Sorry, you are not allowed to manage icon libraries.', 'icon-library' ) );
 		}
-		check_admin_referer( $nonce_action );
 	}
 
 	/**
