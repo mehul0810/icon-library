@@ -1,0 +1,17 @@
+/*
+ * WordPress 7.1 keeps the root class on registered SVGs but strips the
+ * stroke attributes used by outline collections. Restore only the known
+ * presentation rules for Icon Library's marked stroked icons.
+ */
+svg.icon-library-stroked {
+	fill: none !important;
+}
+
+svg.icon-library-stroked > path,
+svg.icon-library-stroked > polygon {
+	fill: none !important;
+	stroke: currentColor !important;
+	stroke-linecap: round !important;
+	stroke-linejoin: round !important;
+	stroke-width: 1.5 !important;
+}

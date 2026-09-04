@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<ruleset name="Icon Library">
+	<description>Icon Library coding standards.</description>
+	<file>icon-library.php</file>
+	<file>uninstall.php</file>
+	<file>src</file>
+	<file>scripts</file>
+	<exclude-pattern>vendor/*</exclude-pattern>
+	<rule ref="WordPress-Core" />
+	<rule ref="WordPress-Docs" />
+	<rule ref="WordPress.Files.FileName.NotHyphenatedLowercase">
+		<exclude-pattern>src/*</exclude-pattern>
+		<exclude-pattern>scripts/lib/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.Files.FileName.InvalidClassFileName">
+		<exclude-pattern>src/*</exclude-pattern>
+		<exclude-pattern>scripts/lib/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.PHP.DiscouragedPHPFunctions.system_calls_exec">
+		<exclude-pattern>scripts/lint.php</exclude-pattern>
+		<exclude-pattern>scripts/import-heroicons.php</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase">
+		<exclude-pattern>src/SvgSanitizer.php</exclude-pattern>
+		<exclude-pattern>scripts/lib/CollectionBuild.php</exclude-pattern>
+	</rule>
+	<arg name="extensions" value="php" />
+	<arg value="sp" />
+</ruleset>

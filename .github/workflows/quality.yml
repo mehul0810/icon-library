@@ -1,0 +1,67 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/1.0.0
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.4']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, libxml, zip
+          coverage: none
+      - name: Read plugin version
+        id: version
+        shell: bash
+        run: |
+          version="$(awk -F': ' '/^[[:space:]]*\*[[:space:]]Version:/ { print $2; exit }' icon-library.php | tr -d '\r')"
+          test -n "$version"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - run: composer install --no-interaction --prefer-dist
+      - run: composer check
+      - if: matrix.php == '8.4'
+        run: composer package
+      - if: matrix.php == '8.4'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: icon-library-${{ steps.version.outputs.value }}
+          path: build/icon-library.${{ steps.version.outputs.value }}.zip
+          if-no-files-found: error
+
+  plugin-check:
+    name: Plugin Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
+        with:
+          php-version: '8.4'
+          extensions: dom, libxml, zip
+          coverage: none
+      - name: Read plugin version
+        id: version
+        shell: bash
+        run: |
+          version="$(awk -F': ' '/^[[:space:]]*\*[[:space:]]Version:/ { print $2; exit }' icon-library.php | tr -d '\r')"
+          test -n "$version"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - run: composer package
+      - run: mkdir -p build/plugin-check && unzip -q build/icon-library.${{ steps.version.outputs.value }}.zip -d build/plugin-check
+      - uses: wordpress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1
+        with:
+          build-dir: build/plugin-check/icon-library
