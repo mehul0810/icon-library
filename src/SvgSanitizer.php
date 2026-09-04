@@ -60,6 +60,11 @@ class SvgSanitizer {
 		if ( ! $loaded || ! $document->documentElement instanceof DOMElement || 'svg' !== strtolower( $document->documentElement->tagName ) ) {
 			return new WP_Error( 'icon_library_svg_invalid', __( 'The file is not a valid SVG document.', 'icon-library' ) );
 		}
+		$xpath                   = new \DOMXPath( $document );
+		$processing_instructions = $xpath->query( '//processing-instruction()' );
+		if ( $processing_instructions && $processing_instructions->length > 0 ) {
+			return new WP_Error( 'icon_library_svg_declaration', __( 'SVG processing instructions are not allowed.', 'icon-library' ) );
+		}
 
 		$namespace = $document->documentElement->namespaceURI;
 		if ( $namespace && 'http://www.w3.org/2000/svg' !== $namespace ) {
@@ -88,7 +93,7 @@ class SvgSanitizer {
 				if ( $attribute->namespaceURI && 'http://www.w3.org/2000/xmlns/' !== $attribute->namespaceURI ) {
 					return new WP_Error( 'icon_library_svg_namespace', __( 'Namespaced SVG attributes are not supported.', 'icon-library' ) );
 				}
-				if ( 1 === preg_match( '/(?:url\s*\(|javascript:|data:|https?:|\/\/)/i', $attribute->value ) ) {
+				if ( false !== strpos( $attribute->value, '\\' ) || 1 === preg_match( '/(?:url\s*\(|javascript:|data:|https?:|\/\/)/i', $attribute->value ) ) {
 					return new WP_Error( 'icon_library_svg_reference', __( 'External or executable SVG references are not allowed.', 'icon-library' ) );
 				}
 			}
@@ -117,6 +122,7 @@ class SvgSanitizer {
 		}
 
 		$svg = preg_replace( '/<\?xml.*?\?>/is', '', $svg );
+		$svg = preg_replace( '/<\?.*?\?>/s', '', $svg );
 		$svg = preg_replace( '/<!doctype.*?>/is', '', $svg );
 		$svg = preg_replace( '/<!--.*?-->/s', '', $svg );
 
@@ -132,7 +138,8 @@ class SvgSanitizer {
 		 * @param string $sanitized Sanitized SVG markup.
 		 * @param string $svg       Original SVG markup.
 		 */
-		return apply_filters( 'icon_library_svg_markup', $sanitized, $svg );
+		$filtered = apply_filters( 'icon_library_svg_markup', $sanitized, $svg );
+		return is_string( $filtered ) ? wp_kses( $filtered, self::get_allowed_svg_tags() ) : '';
 	}
 
 	/**

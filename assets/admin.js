@@ -178,22 +178,31 @@
 	document.addEventListener( 'click', function ( event ) {
 		var saveButton = event.target.closest( '.icon-library-custom-save' );
 		var deleteButton = event.target.closest( '.icon-library-custom-delete' );
+		var restoreButton = event.target.closest( '.icon-library-custom-restore' );
+		var purgeButton = event.target.closest( '.icon-library-custom-purge' );
 		var card = event.target.closest( '.icon-library-custom-icon' );
 
-		if ( ! card || ( ! saveButton && ! deleteButton ) ) {
+		if ( ! card || ( ! saveButton && ! deleteButton && ! restoreButton && ! purgeButton ) ) {
 			return;
 		}
 
 		if ( deleteButton && ! window.confirm( config.i18n.deleteConfirm ) ) {
 			return;
 		}
+		if ( purgeButton && ! window.confirm( config.i18n.purgeConfirm ) ) {
+			return;
+		}
 
 		var status = document.querySelector( '.icon-library-status' );
 		var name = card.dataset.name;
+		var operation = restoreButton ? '/restore' : ( purgeButton ? '/purge' : '' );
 		var request = {
 			path: config.customPath + '/' + encodeURIComponent( name ),
-			method: deleteButton ? 'DELETE' : 'PATCH',
+			method: operation ? 'POST' : ( deleteButton ? 'DELETE' : 'PATCH' ),
 		};
+		if ( operation ) {
+			request.path += operation;
+		}
 
 		if ( saveButton ) {
 			request.data = { label: card.querySelector( '.icon-library-custom-label' ).value };
@@ -202,7 +211,7 @@
 		card.setAttribute( 'aria-busy', 'true' );
 		status.textContent = config.i18n.updating;
 		apiFetch( request ).then( function () {
-			reloadWithSuccess( deleteButton ? '.icon-library-custom-heading' : customIconSelector( name ) + ' .icon-library-custom-save' );
+			reloadWithSuccess( ( deleteButton || restoreButton || purgeButton ) ? '.icon-library-custom-heading' : customIconSelector( name ) + ' .icon-library-custom-save' );
 		} ).catch( function ( error ) {
 			card.removeAttribute( 'aria-busy' );
 			status.textContent = error && error.message ? error.message : config.i18n.error;
@@ -247,7 +256,7 @@
 		button.disabled = true;
 		status.textContent = config.i18n.uploading;
 
-		file.text().then( function ( svg ) {
+		readFile( file ).then( function ( svg ) {
 			return apiFetch( {
 				path: config.customPath,
 				method: 'POST',
@@ -263,6 +272,19 @@
 			form.removeAttribute( 'aria-busy' );
 			button.disabled = false;
 			status.textContent = error && error.message ? error.message : config.i18n.error;
+		} );
+	}
+
+	function readFile( file ) {
+		if ( file && 'function' === typeof file.text ) {
+			return file.text();
+		}
+
+		return new Promise( function ( resolve, reject ) {
+			var reader = new FileReader();
+			reader.onload = function () { resolve( reader.result ); };
+			reader.onerror = reject;
+			reader.readAsText( file );
 		} );
 	}
 

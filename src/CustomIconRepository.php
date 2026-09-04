@@ -18,6 +18,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class CustomIconRepository {
 	const MAX_ICONS       = 500;
+	const MAX_BYTES       = 33554432;
+	const LOCK_TTL        = 60;
 	const OPTION_LOCK     = 'icon_library_custom_icons_lock';
 	const COLLECTION_SLUG = 'custom-icons';
 	const OPTION_ICONS    = 'icon_library_custom_icons';
@@ -28,6 +30,13 @@ class CustomIconRepository {
 	 * @var SvgSanitizer
 	 */
 	private $sanitizer;
+
+	/**
+	 * Token for the current request's metadata lock.
+	 *
+	 * @var string
+	 */
+	private $lock_token = '';
 
 	/**
 	 * Constructor.
@@ -93,40 +102,43 @@ class CustomIconRepository {
 	 */
 	public function create( $name, $label, $svg ) {
 		$raw_name = is_string( $name ) ? trim( $name ) : '';
-		$name     = sanitize_key( $raw_name );
-		$label    = sanitize_text_field( $label );
+		$name     = $this->normalize_name( $raw_name );
+		$label    = is_string( $label ) ? sanitize_text_field( $label ) : '';
 
 		if ( $raw_name !== $name || ! $name || 1 !== preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $name ) ) {
-			return new WP_Error( 'icon_library_custom_name_invalid', __( 'Use a lowercase icon name containing letters, numbers, and hyphens.', 'icon-library' ) );
+			return new WP_Error( 'icon_library_custom_name_invalid', __( 'Use a lowercase icon name containing letters, numbers, and hyphens.', 'icon-library' ), array( 'status' => 400 ) );
 		}
 		if ( '' === $label ) {
-			return new WP_Error( 'icon_library_custom_label_invalid', __( 'An icon label is required.', 'icon-library' ) );
+			return new WP_Error( 'icon_library_custom_label_invalid', __( 'An icon label is required.', 'icon-library' ), array( 'status' => 400 ) );
 		}
 
 		$icons = $this->get_icons();
-		if ( self::MAX_ICONS <= $this->count_discoverable_icons( $icons ) ) {
-			return new WP_Error( 'icon_library_custom_limit', __( 'The custom icon limit has been reached.', 'icon-library' ) );
+		if ( self::MAX_ICONS <= count( $icons ) ) {
+			return new WP_Error( 'icon_library_custom_limit', __( 'The custom icon limit has been reached.', 'icon-library' ), array( 'status' => 409 ) );
 		}
 		if ( isset( $icons[ $name ] ) ) {
-			return new WP_Error( 'icon_library_custom_duplicate', __( 'An icon with that name already exists.', 'icon-library' ) );
+			return new WP_Error( 'icon_library_custom_duplicate', __( 'An icon with that name already exists.', 'icon-library' ), array( 'status' => 409 ) );
 		}
 
 		$sanitized = $this->sanitizer->sanitize_custom( $svg );
 		if ( is_wp_error( $sanitized ) ) {
+			if ( ! is_array( $sanitized->get_error_data() ) || empty( $sanitized->get_error_data()['status'] ) ) {
+				$sanitized->add_data( array( 'status' => 400 ) );
+			}
 			return $sanitized;
 		}
 
 		if ( ! $this->acquire_lock() ) {
-			return new WP_Error( 'icon_library_custom_busy', __( 'Another custom icon change is in progress. Try again.', 'icon-library' ) );
+			return new WP_Error( 'icon_library_custom_busy', __( 'Another custom icon change is in progress. Try again.', 'icon-library' ), array( 'status' => 409 ) );
 		}
 
 		try {
 			$icons = $this->get_icons();
-			if ( self::MAX_ICONS <= $this->count_discoverable_icons( $icons ) ) {
-				return new WP_Error( 'icon_library_custom_limit', __( 'The custom icon limit has been reached.', 'icon-library' ) );
+			if ( self::MAX_ICONS <= count( $icons ) || self::MAX_BYTES < $this->get_retained_bytes( $icons ) + strlen( $sanitized ) ) {
+				return new WP_Error( 'icon_library_custom_limit', __( 'The custom icon limit has been reached.', 'icon-library' ), array( 'status' => 409 ) );
 			}
 			if ( isset( $icons[ $name ] ) ) {
-				return new WP_Error( 'icon_library_custom_duplicate', __( 'An icon with that name already exists.', 'icon-library' ) );
+				return new WP_Error( 'icon_library_custom_duplicate', __( 'An icon with that name already exists.', 'icon-library' ), array( 'status' => 409 ) );
 			}
 
 			$directory = $this->get_directory( true );
@@ -154,6 +166,7 @@ class CustomIconRepository {
 				'keywords'     => preg_split( '/[-\s]+/', $name ),
 				'path'         => $name . '.svg',
 				'sha256'       => hash( 'sha256', $sanitized ),
+				'bytes'        => strlen( $sanitized ),
 			);
 
 			if ( ! update_option( self::OPTION_ICONS, $icons, false ) ) {
@@ -174,6 +187,9 @@ class CustomIconRepository {
 	 * @return string|null
 	 */
 	public function get_file_path( $relative_path ) {
+		if ( ! is_string( $relative_path ) ) {
+			return null;
+		}
 		$name = basename( (string) $relative_path, '.svg' );
 		if ( $name . '.svg' !== $relative_path || ! isset( $this->get_icons()[ $name ] ) ) {
 			return null;
@@ -206,10 +222,10 @@ class CustomIconRepository {
 	 * @return array|WP_Error
 	 */
 	public function update_label( $name, $label ) {
-		$name  = sanitize_key( $name );
-		$label = sanitize_text_field( $label );
+		$name  = $this->normalize_name( $name );
+		$label = is_string( $label ) ? sanitize_text_field( $label ) : '';
 		if ( ! $this->acquire_lock() ) {
-			return new WP_Error( 'icon_library_custom_busy', __( 'Another custom icon change is in progress. Try again.', 'icon-library' ) );
+			return new WP_Error( 'icon_library_custom_busy', __( 'Another custom icon change is in progress. Try again.', 'icon-library' ), array( 'status' => 409 ) );
 		}
 		try {
 			$icons = $this->get_icons();
@@ -217,13 +233,13 @@ class CustomIconRepository {
 				return new WP_Error( 'icon_library_custom_not_found', __( 'Custom icon not found.', 'icon-library' ), array( 'status' => 404 ) );
 			}
 			if ( '' === $label ) {
-				return new WP_Error( 'icon_library_custom_label_invalid', __( 'An icon label is required.', 'icon-library' ) );
+				return new WP_Error( 'icon_library_custom_label_invalid', __( 'An icon label is required.', 'icon-library' ), array( 'status' => 400 ) );
 			}
 			$icons[ $name ]['label'] = $label;
 			if ( ! update_option( self::OPTION_ICONS, $icons, false ) ) {
 				$current = $this->get_icons();
 				if ( ! isset( $current[ $name ] ) || $label !== $current[ $name ]['label'] ) {
-					return new WP_Error( 'icon_library_custom_metadata_failed', __( 'The icon metadata could not be updated.', 'icon-library' ) );
+					return new WP_Error( 'icon_library_custom_metadata_failed', __( 'The icon metadata could not be updated.', 'icon-library' ), array( 'status' => 500 ) );
 				}
 			}
 			return $icons[ $name ];
@@ -239,9 +255,9 @@ class CustomIconRepository {
 	 * @return true|WP_Error
 	 */
 	public function delete( $name ) {
-		$name = sanitize_key( $name );
+		$name = $this->normalize_name( $name );
 		if ( ! $this->acquire_lock() ) {
-			return new WP_Error( 'icon_library_custom_busy', __( 'Another custom icon change is in progress. Try again.', 'icon-library' ) );
+			return new WP_Error( 'icon_library_custom_busy', __( 'Another custom icon change is in progress. Try again.', 'icon-library' ), array( 'status' => 409 ) );
 		}
 		try {
 			$icons = $this->get_icons();
@@ -255,7 +271,74 @@ class CustomIconRepository {
 			if ( ! update_option( self::OPTION_ICONS, $icons, false ) ) {
 				$current = $this->get_icons();
 				if ( empty( $current[ $name ]['archived'] ) ) {
-					return new WP_Error( 'icon_library_custom_metadata_failed', __( 'The icon metadata could not be updated.', 'icon-library' ) );
+					return new WP_Error( 'icon_library_custom_metadata_failed', __( 'The icon metadata could not be updated.', 'icon-library' ), array( 'status' => 500 ) );
+				}
+			}
+			return true;
+		} finally {
+			$this->release_lock();
+		}
+	}
+
+	/**
+	 * Restores an archived icon for new selections.
+	 *
+	 * @param string $name Stable name.
+	 * @return true|WP_Error
+	 */
+	public function restore( $name ) {
+		$name = $this->normalize_name( $name );
+		if ( ! $this->acquire_lock() ) {
+			return new WP_Error( 'icon_library_custom_busy', __( 'Another custom icon change is in progress. Try again.', 'icon-library' ), array( 'status' => 409 ) );
+		}
+		try {
+			$icons = $this->get_icons();
+			if ( ! isset( $icons[ $name ] ) ) {
+				return new WP_Error( 'icon_library_custom_not_found', __( 'Custom icon not found.', 'icon-library' ), array( 'status' => 404 ) );
+			}
+			if ( empty( $icons[ $name ]['archived'] ) ) {
+				return true;
+			}
+			unset( $icons[ $name ]['archived'] );
+			if ( ! update_option( self::OPTION_ICONS, $icons, false ) ) {
+				return new WP_Error( 'icon_library_custom_metadata_failed', __( 'The icon metadata could not be updated.', 'icon-library' ), array( 'status' => 500 ) );
+			}
+			return true;
+		} finally {
+			$this->release_lock();
+		}
+	}
+
+	/**
+	 * Permanently removes an archived icon and its stored SVG.
+	 *
+	 * @param string $name Stable name.
+	 * @return true|WP_Error
+	 */
+	public function purge( $name ) {
+		$name = $this->normalize_name( $name );
+		if ( ! $this->acquire_lock() ) {
+			return new WP_Error( 'icon_library_custom_busy', __( 'Another custom icon change is in progress. Try again.', 'icon-library' ), array( 'status' => 409 ) );
+		}
+		try {
+			$icons    = $this->get_icons();
+			$original = $icons;
+			if ( ! isset( $icons[ $name ] ) ) {
+				return new WP_Error( 'icon_library_custom_not_found', __( 'Custom icon not found.', 'icon-library' ), array( 'status' => 404 ) );
+			}
+			if ( empty( $icons[ $name ]['archived'] ) ) {
+				return new WP_Error( 'icon_library_custom_not_archived', __( 'Archive the icon before permanently deleting it.', 'icon-library' ), array( 'status' => 409 ) );
+			}
+			$path = $this->get_file_path( $name . '.svg' );
+			unset( $icons[ $name ] );
+			if ( ! update_option( self::OPTION_ICONS, $icons, false ) ) {
+				return new WP_Error( 'icon_library_custom_metadata_failed', __( 'The icon metadata could not be updated.', 'icon-library' ), array( 'status' => 500 ) );
+			}
+			if ( $path ) {
+				wp_delete_file( $path );
+				if ( file_exists( $path ) ) {
+					update_option( self::OPTION_ICONS, $original, false );
+					return new WP_Error( 'icon_library_custom_delete_failed', __( 'The stored icon could not be removed.', 'icon-library' ), array( 'status' => 500 ) );
 				}
 			}
 			return true;
@@ -270,29 +353,75 @@ class CustomIconRepository {
 	 * @return bool
 	 */
 	private function acquire_lock() {
-		return add_option( self::OPTION_LOCK, time(), '', false );
+		$existing = get_option( self::OPTION_LOCK, false );
+		$started  = is_array( $existing ) && is_scalar( $existing['started'] ?? null ) ? absint( $existing['started'] ) : ( is_scalar( $existing ) ? absint( $existing ) : 0 );
+		if ( $started && time() - $started > self::LOCK_TTL ) {
+			delete_option( self::OPTION_LOCK );
+		}
+
+		$this->lock_token = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : uniqid( 'icon-library-', true );
+		if ( ! add_option(
+			self::OPTION_LOCK,
+			array(
+				'token'   => $this->lock_token,
+				'started' => time(),
+			),
+			'',
+			false
+		) ) {
+			$this->lock_token = '';
+			return false;
+		}
+		return true;
 	}
 
 	/** Releases the custom icon metadata lock. */
 	private function release_lock() {
-		delete_option( self::OPTION_LOCK );
+		$lock = get_option( self::OPTION_LOCK, false );
+		if ( is_array( $lock ) && isset( $lock['token'] ) && is_string( $lock['token'] ) && '' !== $lock['token'] && '' !== $this->lock_token && hash_equals( $lock['token'], $this->lock_token ) ) {
+			delete_option( self::OPTION_LOCK );
+		}
+		$this->lock_token = '';
 	}
 
 	/**
-	 * Counts icons offered for new selections.
+	 * Counts bytes retained by active and archived icon files.
 	 *
 	 * @param array $icons Stored icon metadata.
 	 * @return int
 	 */
-	private function count_discoverable_icons( $icons ) {
-		return count(
-			array_filter(
-				$icons,
-				static function ( $icon ) {
-					return empty( $icon['archived'] );
+	private function get_retained_bytes( $icons ) {
+		$total     = 0;
+		$directory = $this->get_directory( false );
+		$directory = is_wp_error( $directory ) ? null : $directory;
+		foreach ( (array) $icons as $icon ) {
+			if ( ! is_array( $icon ) ) {
+				continue;
+			}
+			if ( isset( $icon['bytes'] ) && is_numeric( $icon['bytes'] ) ) {
+				$total += max( 0, absint( $icon['bytes'] ) );
+				continue;
+			}
+			$relative_path = isset( $icon['path'] ) && is_string( $icon['path'] ) ? $icon['path'] : '';
+			if ( $directory && '' !== $relative_path && basename( $relative_path ) === $relative_path && '.svg' === substr( $relative_path, -4 ) ) {
+				$path  = $directory . '/' . $relative_path;
+				$bytes = is_file( $path ) ? filesize( $path ) : false;
+				if ( false !== $bytes ) {
+					$total += $bytes;
 				}
-			)
-		);
+			}
+		}
+		return $total;
+	}
+
+	/**
+	 * Normalizes a custom icon name without accepting array/object input.
+	 *
+	 * @param mixed $name Candidate name.
+	 * @return string
+	 */
+	private function normalize_name( $name ) {
+		return is_string( $name ) ? sanitize_key( $name ) : '';
 	}
 
 	/**
@@ -306,11 +435,20 @@ class CustomIconRepository {
 		if ( ! empty( $uploads['error'] ) ) {
 			return new WP_Error( 'icon_library_upload_directory', $uploads['error'] );
 		}
-		$directory = trailingslashit( $uploads['basedir'] ) . 'icon-library/custom-icons';
+		$base_path = is_string( $uploads['basedir'] ?? null ) ? $uploads['basedir'] : '';
+		if ( $create && $base_path && ! is_dir( $base_path ) && ! wp_mkdir_p( $base_path ) ) {
+			return new WP_Error( 'icon_library_upload_directory', __( 'The uploads directory could not be created.', 'icon-library' ) );
+		}
+		$base = realpath( $base_path );
+		if ( false === $base || ! is_dir( $base ) ) {
+			return new WP_Error( 'icon_library_upload_directory', __( 'The uploads directory is not available.', 'icon-library' ) );
+		}
+		$directory = $base . '/icon-library/custom-icons';
 		if ( $create && ! wp_mkdir_p( $directory ) ) {
 			return new WP_Error( 'icon_library_upload_directory', __( 'The custom icon directory could not be created.', 'icon-library' ) );
 		}
-		if ( ! is_dir( $directory ) ) {
+		$resolved = realpath( $directory );
+		if ( false === $resolved || is_link( $directory ) || 0 !== strpos( $resolved, $base . DIRECTORY_SEPARATOR ) || ! is_dir( $resolved ) ) {
 			return new WP_Error( 'icon_library_upload_directory', __( 'The custom icon directory does not exist.', 'icon-library' ) );
 		}
 		return $directory;

@@ -39,12 +39,6 @@ body.js .icon-library-admin.is-loading > * {
 	padding: 16px 24px;
 }
 
-.icon-library-admin > .notice:not(.icon-library-notice),
-.icon-library-admin > .updated:not(.icon-library-notice),
-.icon-library-admin > .error:not(.icon-library-notice) {
-	display: none !important;
-}
-
 .icon-library-admin .notice {
 	margin-left: 32px;
 	margin-right: 32px;
@@ -436,7 +430,13 @@ body.js .icon-library-admin.is-loading > * {
 
 .icon-library-custom-actions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 10px;
+}
+
+.icon-library-custom-icon.is-archived {
+	background: #f8f8f8;
+	opacity: 0.78;
 }
 
 @media (max-width: 782px) {

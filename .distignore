@@ -1,0 +1,14 @@
+.git
+.github
+.codex
+.agents
+build
+tests
+vendor
+scripts
+docs
+composer.lock
+phpcs.xml.dist
+phpunit.xml.dist
+.editorconfig
+.gitignore

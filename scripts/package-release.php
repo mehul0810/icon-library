@@ -5,7 +5,16 @@
  * @package IconLibrary
  */
 
+use IconLibrary\Build\CollectionBuild;
+
 $root = dirname( __DIR__ );
+
+if ( PHP_SAPI !== 'cli' ) {
+	fwrite( STDERR, "This script must run from the command line.\n" );
+	exit( 1 );
+}
+
+require_once __DIR__ . '/lib/CollectionBuild.php';
 
 if ( ! class_exists( 'ZipArchive' ) ) {
 	fwrite( STDERR, "The Zip extension is required.\n" );
@@ -25,28 +34,31 @@ if ( ! preg_match( '/^Stable tag:\s*(\S+)/mi', $readme, $stable_match ) || $vers
 	exit( 1 );
 }
 
-$files = array(
+$files            = array(
 	'.' => array(
 		'icon-library.php',
 		'uninstall.php',
 		'readme.txt',
-		'README.md',
 		'LICENSE.md',
-		'composer.json',
 		'assets/admin.css',
 		'assets/admin.js',
 		'assets/icons.css',
 	),
 );
+$legacy_svg_paths = array();
 
 foreach ( glob( $root . '/src/*.php' ) as $source_file ) {
 	$files['.'][] = substr( $source_file, strlen( $root ) + 1 );
 }
 foreach ( glob( $root . '/assets/icons/*/manifest.json' ) as $manifest_path ) {
-	$collection = basename( dirname( $manifest_path ) );
-	$manifest   = json_decode( file_get_contents( $manifest_path ), true );
-	if ( ! is_array( $manifest ) || empty( $manifest['icons'] ) || $collection !== $manifest['slug'] ) {
+	$collection      = basename( dirname( $manifest_path ) );
+	$manifest        = json_decode( file_get_contents( $manifest_path ), true );
+	$manifest_errors = is_array( $manifest ) ? CollectionBuild::validate_manifest( $manifest, dirname( $manifest_path ) ) : array( 'Manifest must decode to an object.' );
+	if ( ! is_array( $manifest ) || ! empty( $manifest_errors ) || 0 !== strcmp( $collection, $manifest['slug'] ?? '' ) ) {
 		fwrite( STDERR, sprintf( "Collection manifest is invalid: %s\n", $collection ) );
+		foreach ( $manifest_errors as $manifest_error ) {
+			fwrite( STDERR, sprintf( "- %s\n", $manifest_error ) );
+		}
 		exit( 1 );
 	}
 	$files['.'][] = 'assets/icons/' . $collection . '/manifest.json';
@@ -64,7 +76,9 @@ foreach ( glob( $root . '/assets/icons/*/manifest.json' ) as $manifest_path ) {
 	if ( 'heroicons' === $collection ) {
 		foreach ( array( '16-solid', '20-solid', '24-solid' ) as $legacy_variant ) {
 			foreach ( glob( $root . '/assets/icons/heroicons/' . $legacy_variant . '/*.svg' ) as $legacy_file ) {
-				$files['.'][] = 'assets/icons/heroicons/' . $legacy_variant . '/' . basename( $legacy_file );
+				$legacy_path                      = 'assets/icons/heroicons/' . $legacy_variant . '/' . basename( $legacy_file );
+				$files['.'][]                     = $legacy_path;
+				$legacy_svg_paths[ $legacy_path ] = true;
 			}
 		}
 	}
@@ -74,9 +88,19 @@ $files = array_values( array_unique( $files['.'] ) );
 sort( $files );
 
 foreach ( $files as $relative_path ) {
-	if ( ! is_readable( $root . '/' . $relative_path ) ) {
+	$source_path = $root . '/' . $relative_path;
+	$resolved    = realpath( $source_path );
+	if ( false === $resolved || is_link( $source_path ) || 0 !== strpos( $resolved, $root . DIRECTORY_SEPARATOR ) || ! is_file( $resolved ) || ! is_readable( $resolved ) ) {
 		fwrite( STDERR, sprintf( "Package file is unreadable: %s\n", $relative_path ) );
 		exit( 1 );
+	}
+	if ( 'svg' === strtolower( pathinfo( $relative_path, PATHINFO_EXTENSION ) ) && isset( $legacy_svg_paths[ $relative_path ] ) ) {
+		try {
+			CollectionBuild::normalize_svg( file_get_contents( $root . '/' . $relative_path ), true );
+		} catch ( RuntimeException $exception ) {
+			fwrite( STDERR, sprintf( "Legacy SVG is invalid: %s (%s)\n", $relative_path, $exception->getMessage() ) );
+			exit( 1 );
+		}
 	}
 }
 
@@ -101,16 +125,46 @@ if ( true !== $zip->open( $temporary, ZipArchive::CREATE | ZipArchive::OVERWRITE
 $timestamp = 946684800;
 foreach ( $files as $relative_path ) {
 	$archive_path = 'icon-library/' . $relative_path;
-	$zip->addFile( $root . '/' . $relative_path, $archive_path );
-	$zip->setMtimeName( $archive_path, $timestamp );
-	$zip->setCompressionName( $archive_path, ZipArchive::CM_DEFLATE, 9 );
+	if ( isset( $legacy_svg_paths[ $relative_path ] ) ) {
+		try {
+			$content = CollectionBuild::normalize_svg( file_get_contents( $root . '/' . $relative_path ), true );
+		} catch ( RuntimeException $exception ) {
+			$zip->close();
+			fwrite( STDERR, sprintf( "Legacy SVG is invalid: %s (%s)\n", $relative_path, $exception->getMessage() ) );
+			exit( 1 );
+		}
+		$added = $zip->addFromString( $archive_path, $content . "\n" );
+	} else {
+		$added = $zip->addFile( $root . '/' . $relative_path, $archive_path );
+	}
+	if ( ! $added || ! $zip->setMtimeName( $archive_path, $timestamp ) || ! $zip->setCompressionName( $archive_path, ZipArchive::CM_DEFLATE, 9 ) ) {
+		$zip->close();
+		fwrite( STDERR, sprintf( "Could not add package file: %s\n", $relative_path ) );
+		exit( 1 );
+	}
 }
-$zip->close();
+if ( ! $zip->close() ) {
+	fwrite( STDERR, "Release ZIP could not be closed.\n" );
+	exit( 1 );
+}
 
 if ( ! rename( $temporary, $destination ) ) {
 	fwrite( STDERR, "Release ZIP could not be finalized.\n" );
 	exit( 1 );
 }
+
+$verification = new ZipArchive();
+$opened       = $verification->open( $destination );
+// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- ZipArchive exposes this standard property name.
+$entry_count = true === $opened ? $verification->numFiles : 0;
+if ( true !== $opened || count( $files ) !== $entry_count ) {
+	if ( true === $opened ) {
+		$verification->close();
+	}
+	fwrite( STDERR, "Release ZIP verification failed.\n" );
+	exit( 1 );
+}
+$verification->close();
 
 printf(
 	"Built %s (%d files, sha256 %s).\n",

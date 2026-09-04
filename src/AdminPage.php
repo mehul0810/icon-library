@@ -101,6 +101,7 @@ class AdminPage {
 					'uploading'      => __( 'Validating and storing icon...', 'icon-library' ),
 					'updated'        => __( 'Icon library updated.', 'icon-library' ),
 					'deleteConfirm'  => __( 'Remove this icon from new selections? Existing blocks will continue to render.', 'icon-library' ),
+					'purgeConfirm'   => __( 'Permanently delete this archived icon and its SVG file? Existing blocks will no longer render it.', 'icon-library' ),
 					'fileTooLarge'   => __( 'SVG files must be 64 KB or smaller.', 'icon-library' ),
 					'loadingMore'    => __( 'Loading more icons...', 'icon-library' ),
 					'loadMoreError'  => __( 'More icons could not be loaded. Try again.', 'icon-library' ),
@@ -119,9 +120,9 @@ class AdminPage {
 			return;
 		}
 
-		$collections = $this->collection_registry->get_collections();
-		$filters     = $this->get_filters( $collections );
 		$active_tab  = $this->get_active_tab();
+		$collections = 'custom' === $active_tab ? array() : $this->collection_registry->get_collections();
+		$filters     = $this->get_filters( $collections );
 		?>
 		<div class="wrap icon-library-admin is-loading">
 			<h1><?php esc_html_e( 'Icons', 'icon-library' ); ?></h1>
@@ -199,17 +200,23 @@ class AdminPage {
 	 */
 	private function render_custom_tab() {
 		$manifest = $this->collection_registry->get_manifest( CustomIconRepository::COLLECTION_SLUG );
-		$icons    = $manifest && ! empty( $manifest['icons'] ) ? array_values(
-			array_filter(
-				$manifest['icons'],
-				static function ( $icon ) {
-					return empty( $icon['archived'] );
-				}
-			)
-		) : array();
+		$icons    = array();
+		$archived = array();
+		foreach ( (array) ( $manifest['icons'] ?? array() ) as $icon ) {
+			if ( ! is_array( $icon ) ) {
+				continue;
+			}
+			if ( ! empty( $icon['archived'] ) ) {
+				$archived[] = $icon;
+			} else {
+				$icons[] = $icon;
+			}
+		}
 		?>
 		<section class="icon-library-panel icon-library-custom">
-			<form class="icon-library-custom-upload">
+			<form class="icon-library-custom-upload" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data">
+				<?php wp_nonce_field( 'icon_library_upload_custom_icon' ); ?>
+				<input type="hidden" name="action" value="icon_library_upload_custom_icon" />
 				<label class="icon-library-upload-area" for="icon-library-svg-upload">
 					<span><?php esc_html_e( 'Upload icon', 'icon-library' ); ?></span>
 					<input id="icon-library-svg-upload" class="screen-reader-text" name="svg" type="file" accept=".svg,image/svg+xml" aria-describedby="icon-library-upload-help" required />
@@ -225,15 +232,23 @@ class AdminPage {
 			</form>
 
 			<h2 class="icon-library-custom-heading"><?php esc_html_e( 'Uploaded Icons', 'icon-library' ); ?></h2>
-			<?php if ( empty( $icons ) ) : ?>
-				<p><?php esc_html_e( 'No custom icons have been added.', 'icon-library' ); ?></p>
+		<?php if ( empty( $icons ) ) : ?>
+			<p><?php esc_html_e( 'No custom icons have been added.', 'icon-library' ); ?></p>
 			<?php else : ?>
 				<div class="icon-library-grid">
 					<?php foreach ( $icons as $icon ) : ?>
 						<?php $this->render_custom_icon( $icon ); ?>
 					<?php endforeach; ?>
-				</div>
-			<?php endif; ?>
+			</div>
+		<?php endif; ?>
+		<?php if ( ! empty( $archived ) ) : ?>
+			<h2 class="icon-library-custom-heading"><?php esc_html_e( 'Archived Icons', 'icon-library' ); ?></h2>
+			<div class="icon-library-grid icon-library-archived-grid">
+				<?php foreach ( $archived as $icon ) : ?>
+					<?php $this->render_archived_custom_icon( $icon ); ?>
+				<?php endforeach; ?>
+			</div>
+		<?php endif; ?>
 		</section>
 		<?php
 	}
@@ -246,6 +261,7 @@ class AdminPage {
 	private function render_custom_icon( $icon ) {
 		$name     = basename( $icon['path'], '.svg' );
 		$svg      = $this->collection_registry->get_svg_content( CustomIconRepository::COLLECTION_SLUG, $icon['path'] );
+		$svg      = false === $svg ? '' : $svg;
 		$title_id = 'icon-library-custom-' . sanitize_html_class( $name );
 		?>
 		<div class="icon-library-icon icon-library-custom-icon" data-name="<?php echo esc_attr( $name ); ?>" role="group" aria-labelledby="<?php echo esc_attr( $title_id ); ?>">
@@ -262,6 +278,30 @@ class AdminPage {
 	}
 
 	/**
+	 * Renders one archived custom icon with restore and purge actions.
+	 *
+	 * @param array $icon Custom icon row.
+	 */
+	private function render_archived_custom_icon( $icon ) {
+		$name     = basename( $icon['path'], '.svg' );
+		$svg      = $this->collection_registry->get_svg_content( CustomIconRepository::COLLECTION_SLUG, $icon['path'] );
+		$svg      = false === $svg ? '' : $svg;
+		$title_id = 'icon-library-archived-' . sanitize_html_class( $name );
+		?>
+		<div class="icon-library-icon icon-library-custom-icon is-archived" data-name="<?php echo esc_attr( $name ); ?>" role="group" aria-labelledby="<?php echo esc_attr( $title_id ); ?>">
+			<div class="icon-library-icon-preview" aria-hidden="true"><?php echo wp_kses( $svg, SvgSanitizer::get_allowed_svg_tags() ); ?></div>
+			<span id="<?php echo esc_attr( $title_id ); ?>" class="screen-reader-text"><?php echo esc_html( $icon['label'] ); ?></span>
+			<div class="icon-library-icon-label"><?php echo esc_html( $icon['label'] ); ?></div>
+			<code><?php echo esc_html( $icon['coreIconName'] ); ?></code>
+			<div class="icon-library-custom-actions">
+				<button type="button" class="button icon-library-custom-restore" aria-label="<?php /* translators: %s: icon label. */ echo esc_attr( sprintf( __( 'Restore %s', 'icon-library' ), $icon['label'] ) ); ?>"><?php esc_html_e( 'Restore', 'icon-library' ); ?></button>
+				<button type="button" class="button button-link-delete icon-library-custom-purge" aria-label="<?php /* translators: %s: icon label. */ echo esc_attr( sprintf( __( 'Permanently delete %s', 'icon-library' ), $icon['label'] ) ); ?>"><?php esc_html_e( 'Delete permanently', 'icon-library' ); ?></button>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
 	 * Renders the collection library tab.
 	 *
 	 * @param array[] $collections Collections.
@@ -269,7 +309,7 @@ class AdminPage {
 	private function render_library_tab( $collections ) {
 		// Read-only navigation state; no nonce is required.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$selected_slug = isset( $_GET['collection'] ) ? sanitize_key( wp_unslash( $_GET['collection'] ) ) : '';
+		$selected_slug = isset( $_GET['collection'] ) && is_string( $_GET['collection'] ) ? sanitize_key( wp_unslash( $_GET['collection'] ) ) : '';
 
 		if ( $selected_slug && isset( $collections[ $selected_slug ] ) && ! empty( $collections[ $selected_slug ]['enabled'] ) ) {
 			$this->render_collection_detail( $collections[ $selected_slug ] );
@@ -375,7 +415,7 @@ class AdminPage {
 	private function render_install_collection_detail( $collection, $filters ) {
 		// This read-only query parameter controls the current browser page.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$page       = isset( $_GET['icon-page'] ) ? max( 1, absint( $_GET['icon-page'] ) ) : 1;
+		$page       = isset( $_GET['icon-page'] ) && is_scalar( $_GET['icon-page'] ) ? min( CollectionRegistry::MAX_PAGE, max( 1, absint( $_GET['icon-page'] ) ) ) : 1;
 		$query_args = array(
 			'collection' => $collection['slug'],
 			'variant'    => $filters['variant'],
@@ -629,7 +669,7 @@ class AdminPage {
 	private function render_filters( $filters, $collections, $variant_counts = null ) {
 		$selected_collection = isset( $collections[ $filters['collection'] ] ) ? $collections[ $filters['collection'] ] : reset( $collections );
 		$variants            = isset( $selected_collection['variants'] ) && is_array( $selected_collection['variants'] ) ? $selected_collection['variants'] : array();
-		$categories          = $this->get_categories( $filters['collection'] );
+		$categories          = $this->get_categories( $filters['collection'], $filters['variant'], $filters['search'] );
 		if ( null === $variant_counts ) {
 			$variant_counts = $this->collection_registry->count_icons_by_variant(
 				array(
@@ -695,11 +735,20 @@ class AdminPage {
 	 * Returns categories available for the current collection filter.
 	 *
 	 * @param string $collection_slug Selected collection slug.
+	 * @param string $variant        Selected variant slug.
+	 * @param string $search         Selected search text.
 	 * @return array[]
 	 */
-	private function get_categories( $collection_slug ) {
+	private function get_categories( $collection_slug, $variant = '', $search = '' ) {
 		$categories = array();
 		$slugs      = $collection_slug ? array( $collection_slug ) : $this->collection_registry->get_enabled_collection_slugs();
+		$counts     = $this->collection_registry->count_icons_by_category(
+			array(
+				'collection' => $collection_slug,
+				'variant'    => $variant,
+				'search'     => $search,
+			)
+		);
 
 		foreach ( $slugs as $slug ) {
 			$manifest = $this->collection_registry->get_manifest( $slug );
@@ -724,7 +773,7 @@ class AdminPage {
 							'iconCount' => 0,
 						);
 					}
-					$categories[ $category_slug ]['iconCount'] += isset( $category['iconCount'] ) ? absint( $category['iconCount'] ) : 0;
+					$categories[ $category_slug ]['iconCount'] = $counts[ $category_slug ] ?? 0;
 				}
 				continue;
 			}
@@ -747,7 +796,7 @@ class AdminPage {
 								'iconCount' => 0,
 							);
 						}
-						++$categories[ $category_slug ]['iconCount'];
+						$categories[ $category_slug ]['iconCount'] = $counts[ $category_slug ] ?? 0;
 					}
 				}
 			}
@@ -805,10 +854,10 @@ class AdminPage {
 		return array(
 			// These read-only values filter escaped admin output and do not mutate state.
 			// phpcs:disable WordPress.Security.NonceVerification.Recommended
-			'collection' => isset( $_GET['collection'] ) ? sanitize_key( wp_unslash( $_GET['collection'] ) ) : '',
-			'variant'    => isset( $_GET['variant'] ) ? sanitize_key( wp_unslash( $_GET['variant'] ) ) : '',
-			'category'   => isset( $_GET['category'] ) ? sanitize_key( wp_unslash( $_GET['category'] ) ) : '',
-			'search'     => isset( $_GET['search'] ) ? sanitize_text_field( wp_unslash( $_GET['search'] ) ) : '',
+			'collection' => isset( $_GET['collection'] ) && is_string( $_GET['collection'] ) ? sanitize_key( wp_unslash( $_GET['collection'] ) ) : '',
+			'variant'    => isset( $_GET['variant'] ) && is_string( $_GET['variant'] ) ? sanitize_key( wp_unslash( $_GET['variant'] ) ) : '',
+			'category'   => isset( $_GET['category'] ) && is_string( $_GET['category'] ) ? sanitize_key( wp_unslash( $_GET['category'] ) ) : '',
+			'search'     => isset( $_GET['search'] ) && is_string( $_GET['search'] ) ? sanitize_text_field( wp_unslash( $_GET['search'] ) ) : '',
 			// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		);
 	}
@@ -821,7 +870,7 @@ class AdminPage {
 	private function get_active_tab() {
 		// Read-only navigation state; no nonce is required.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'library';
+		$tab = isset( $_GET['tab'] ) && is_string( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'library';
 
 		return in_array( $tab, array( 'library', 'browse', 'custom' ), true ) ? $tab : 'library';
 	}

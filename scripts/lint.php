@@ -5,6 +5,11 @@
  * @package IconLibrary
  */
 
+if ( PHP_SAPI !== 'cli' ) {
+	fwrite( STDERR, "This script must run from the command line.\n" );
+	exit( 1 );
+}
+
 $root  = dirname( __DIR__ );
 $paths = array( 'icon-library.php', 'uninstall.php', 'src', 'scripts', 'tests' );
 $files = array();

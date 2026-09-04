@@ -18,6 +18,64 @@ final class CollectionBuild {
 	const SCHEMA_VERSION = 2;
 
 	/**
+	 * Verifies that an importer is reading an unmodified, expected checkout.
+	 *
+	 * @param string $source_dir       Source checkout.
+	 * @param string $expected_url     Expected upstream repository URL.
+	 * @param string $license_relative License path inside the checkout.
+	 * @return void
+	 * @throws RuntimeException When the checkout is not trustworthy.
+	 */
+	public static function validate_source_checkout( $source_dir, $expected_url, $license_relative ) {
+		$root = realpath( $source_dir );
+		if ( false === $root || ! is_dir( $root ) ) {
+			throw new RuntimeException( 'Source checkout path is invalid.' );
+		}
+
+		$status = trim( (string) shell_exec( 'git -C ' . escapeshellarg( $root ) . ' status --porcelain 2>/dev/null' ) );
+		if ( '' !== $status ) {
+			throw new RuntimeException( 'Source checkout must have a clean Git worktree.' );
+		}
+
+		$remote    = trim( (string) shell_exec( 'git -C ' . escapeshellarg( $root ) . ' remote get-url origin 2>/dev/null' ) );
+		$normalize = static function ( $url ) {
+			$url = trim( (string) $url );
+			$url = preg_replace( '#^git@([^:]+):#', 'https://$1/', $url );
+			$url = preg_replace( '#\.git$#', '', $url );
+			return rtrim( (string) $url, '/' );
+		};
+		if ( '' === $remote || $normalize( $remote ) !== $normalize( $expected_url ) ) {
+			throw new RuntimeException( 'Source checkout remote does not match the expected upstream.' );
+		}
+
+		self::get_contained_source_file( $root, $license_relative );
+	}
+
+	/**
+	 * Resolves one regular, non-symlink file inside an upstream checkout.
+	 *
+	 * @param string $source_dir       Source checkout.
+	 * @param string $relative_path    File path relative to the checkout.
+	 * @return string Canonical file path.
+	 * @throws RuntimeException When the file is missing or escapes the checkout.
+	 */
+	public static function get_contained_source_file( $source_dir, $relative_path ) {
+		$root = realpath( $source_dir );
+		if ( false === $root || ! is_dir( $root ) || ! is_string( $relative_path ) ) {
+			throw new RuntimeException( 'Source file path is invalid.' );
+		}
+
+		$relative = ltrim( str_replace( '\\', '/', $relative_path ), '/' );
+		$path     = $root . '/' . $relative;
+		$resolved = realpath( $path );
+		if ( false === $resolved || is_link( $path ) || 0 !== strpos( $resolved, $root . DIRECTORY_SEPARATOR ) || ! is_file( $resolved ) || ! is_readable( $resolved ) ) {
+			throw new RuntimeException( 'Source file must be a readable regular file inside the checkout.' );
+		}
+
+		return $resolved;
+	}
+
+	/**
 	 * WordPress 7.1 SVG elements and attributes accepted by WP_Icons_Registry.
 	 *
 	 * @var array<string,string[]>
@@ -41,6 +99,7 @@ final class CollectionBuild {
 		'svg'     => array( 'class', 'xmlns', 'width', 'height', 'viewbox', 'aria-hidden', 'role', 'focusable', 'fill', 'stroke', 'stroke-linecap', 'stroke-linejoin', 'stroke-width' ),
 		'path'    => array( 'fill', 'fill-rule', 'd', 'transform', 'stroke', 'stroke-linecap', 'stroke-linejoin', 'stroke-width' ),
 		'polygon' => array( 'fill', 'fill-rule', 'points', 'transform', 'focusable', 'stroke', 'stroke-linecap', 'stroke-linejoin', 'stroke-width' ),
+		'rect'    => array( 'fill', 'fill-rule', 'x', 'y', 'width', 'height', 'rx', 'ry', 'transform' ),
 	);
 
 	/**
@@ -69,6 +128,10 @@ final class CollectionBuild {
 		if ( ! $loaded || ! $document->documentElement instanceof DOMElement || 'svg' !== strtolower( $document->documentElement->tagName ) ) {
 			throw new RuntimeException( 'SVG markup is not a valid SVG document.' );
 		}
+		$processing_instructions = ( new \DOMXPath( $document ) )->query( '//processing-instruction()' );
+		if ( $processing_instructions && $processing_instructions->length > 0 ) {
+			throw new RuntimeException( 'SVG processing instructions are not allowed.' );
+		}
 
 		$xpath    = new \DOMXPath( $document );
 		$comments = $xpath->query( '//comment()' );
@@ -91,7 +154,7 @@ final class CollectionBuild {
 				throw new RuntimeException( sprintf( 'Unsupported SVG element: %s.', $tag ) );
 			}
 
-			if ( 'path' === $tag || 'polygon' === $tag ) {
+			if ( in_array( $tag, array( 'path', 'polygon', 'rect' ), true ) ) {
 				++$geometry_count;
 			}
 
@@ -102,7 +165,7 @@ final class CollectionBuild {
 				if ( $attribute->namespaceURI && 'http://www.w3.org/2000/xmlns/' !== $attribute->namespaceURI ) {
 					throw new RuntimeException( 'Namespaced SVG attributes are not supported.' );
 				}
-				if ( 1 === preg_match( '/(?:url\s*\(|javascript:|data:|https?:|\/\/)/i', $attribute->value ) ) {
+				if ( false !== strpos( $attribute->value, '\\' ) || 1 === preg_match( '/(?:url\s*\(|javascript:|data:|https?:|\/\/)/i', $attribute->value ) ) {
 					throw new RuntimeException( 'External or executable SVG references are not allowed.' );
 				}
 
@@ -153,6 +216,9 @@ final class CollectionBuild {
 	 */
 	public static function validate_manifest( $manifest, $collection_dir ) {
 		$errors = array();
+		if ( ! is_array( $manifest ) ) {
+			return array( 'Manifest must decode to an object.' );
+		}
 
 		foreach ( array( 'schemaVersion', 'slug', 'name', 'description', 'version', 'license', 'source', 'variants', 'icons' ) as $key ) {
 			if ( ! array_key_exists( $key, $manifest ) ) {
@@ -163,36 +229,56 @@ final class CollectionBuild {
 		if ( self::SCHEMA_VERSION !== ( $manifest['schemaVersion'] ?? null ) ) {
 			$errors[] = sprintf( 'schemaVersion must be %d.', self::SCHEMA_VERSION );
 		}
+		foreach ( array( 'slug', 'name', 'description', 'version' ) as $text_key ) {
+			if ( ! is_string( $manifest[ $text_key ] ?? null ) || ( 'description' !== $text_key && '' === trim( $manifest[ $text_key ] ) ) ) {
+				$errors[] = sprintf( '%s must be a string%s.', $text_key, 'description' === $text_key ? '' : ' containing text' );
+			}
+		}
 
-		$slug = $manifest['slug'] ?? '';
+		$slug = is_string( $manifest['slug'] ?? null ) ? $manifest['slug'] : '';
 		if ( ! is_string( $slug ) || 1 !== preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug ) ) {
 			$errors[] = 'Collection slug is invalid.';
 		}
 
 		foreach ( array( 'license', 'source' ) as $metadata_key ) {
 			$metadata = $manifest[ $metadata_key ] ?? null;
-			if ( ! is_array( $metadata ) || empty( $metadata['name'] ) || empty( $metadata['url'] ) ) {
+			if ( ! is_array( $metadata ) || ! is_string( $metadata['name'] ?? null ) || '' === trim( $metadata['name'] ?? '' ) || ! is_string( $metadata['url'] ?? null ) || false === filter_var( $metadata['url'], FILTER_VALIDATE_URL ) ) {
 				$errors[] = sprintf( '%s metadata requires name and url.', ucfirst( $metadata_key ) );
 			}
 		}
 
-		if ( empty( $manifest['source']['revision'] ) || 1 !== preg_match( '/^[a-f0-9]{40}$/', $manifest['source']['revision'] ) ) {
+		$revision = is_array( $manifest['source'] ?? null ) ? ( $manifest['source']['revision'] ?? '' ) : '';
+		if ( ! is_string( $revision ) || '' === $revision || 1 !== preg_match( '/^[a-f0-9]{40}$/', $revision ) ) {
 			$errors[] = 'Source metadata requires a full Git commit revision.';
 		}
 
 		$variant_slugs = array();
+		if ( ! is_array( $manifest['variants'] ?? null ) || empty( $manifest['variants'] ) ) {
+			$errors[] = 'Manifest must contain at least one variant.';
+		}
 		foreach ( (array) ( $manifest['variants'] ?? array() ) as $variant_index => $variant ) {
 			$prefix = sprintf( 'variants[%d]', $variant_index );
-			if ( ! is_array( $variant ) || empty( $variant['slug'] ) || empty( $variant['label'] ) ) {
+			if ( ! is_array( $variant ) || ! is_string( $variant['slug'] ?? null ) || ! is_string( $variant['label'] ?? null ) || '' === trim( $variant['slug'] ?? '' ) || '' === trim( $variant['label'] ?? '' ) ) {
 				$errors[] = $prefix . ' requires slug and label.';
 				continue;
 			}
-			$variant_slug = (string) $variant['slug'];
+			$variant_slug = $variant['slug'];
+			if ( ! is_string( $variant_slug ) ) {
+				$variant_slug = '';
+			}
+			if ( 1 !== preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $variant_slug ) ) {
+				$errors[] = sprintf( '%s has an invalid slug.', $prefix );
+			}
 			if ( isset( $variant_slugs[ $variant_slug ] ) ) {
 				$errors[] = sprintf( 'Duplicate variant slug: %s.', $variant_slug );
 			}
 			if ( array_key_exists( 'iconCount', $variant ) && ( ! is_int( $variant['iconCount'] ) || $variant['iconCount'] < 0 ) ) {
 				$errors[] = $prefix . ' iconCount must be a non-negative integer.';
+			}
+			foreach ( array( 'coreCompatible', 'defaultEnabled' ) as $boolean_key ) {
+				if ( array_key_exists( $boolean_key, $variant ) && ! is_bool( $variant[ $boolean_key ] ) ) {
+					$errors[] = sprintf( '%s %s must be boolean.', $prefix, $boolean_key );
+				}
 			}
 			$variant_slugs[ $variant_slug ] = false !== ( $variant['coreCompatible'] ?? true );
 		}
@@ -208,7 +294,10 @@ final class CollectionBuild {
 						$errors[] = $prefix . ' requires slug, label, and iconCount.';
 						continue;
 					}
-					$category_slug = (string) $category['slug'];
+					$category_slug = $category['slug'];
+					if ( ! is_string( $category_slug ) ) {
+						$category_slug = '';
+					}
 					if ( isset( $category_slugs[ $category_slug ] ) ) {
 						$errors[] = sprintf( 'Duplicate category slug: %s.', $category_slug );
 					}
@@ -248,18 +337,42 @@ final class CollectionBuild {
 				}
 			}
 
-			$id      = $icon['id'] ?? '';
-			$name    = $icon['coreIconName'] ?? '';
-			$variant = (string) ( $icon['variant'] ?? '' );
+			$id       = $icon['id'] ?? '';
+			$name     = $icon['coreIconName'] ?? '';
+			$variant  = $icon['variant'] ?? '';
+			$id_key   = is_string( $id ) ? $id : '';
+			$name_key = is_string( $name ) ? $name : '';
+			$variant  = is_string( $variant ) ? $variant : '';
+			if ( ! is_string( $id ) || '' === trim( $id ) ) {
+				$errors[] = $prefix . ' id must be a non-empty string.';
+			}
+			if ( ! is_string( $icon['label'] ?? null ) || '' === trim( $icon['label'] ?? '' ) ) {
+				$errors[] = $prefix . ' label must be a non-empty string.';
+			}
+			if ( ! is_string( $icon['variant'] ?? null ) || '' === trim( $variant ) ) {
+				$errors[] = $prefix . ' variant must be a non-empty string.';
+			}
+			foreach ( array( 'categories', 'keywords' ) as $list_key ) {
+				if ( ! is_array( $icon[ $list_key ] ?? null ) || array_filter( (array) ( $icon[ $list_key ] ?? array() ), 'is_string' ) !== (array) ( $icon[ $list_key ] ?? array() ) ) {
+					$errors[] = sprintf( '%s %s must be an array of strings.', $prefix, $list_key );
+				}
+			}
+			if ( ! is_string( $icon['sha256'] ?? null ) || 1 !== preg_match( '/^[a-f0-9]{64}$/', $icon['sha256'] ?? '' ) ) {
+				$errors[] = $prefix . ' sha256 must be a lowercase SHA-256 checksum.';
+			}
 
-			if ( isset( $ids[ $id ] ) ) {
+			if ( '' !== $id_key && isset( $ids[ $id_key ] ) ) {
 				$errors[] = sprintf( 'Duplicate icon id: %s.', $id );
 			}
-			if ( isset( $names[ $name ] ) ) {
+			if ( '' !== $name_key && isset( $names[ $name_key ] ) ) {
 				$errors[] = sprintf( 'Duplicate Core icon name: %s.', $name );
 			}
-			$ids[ $id ]     = true;
-			$names[ $name ] = true;
+			if ( '' !== $id_key ) {
+				$ids[ $id_key ] = true;
+			}
+			if ( '' !== $name_key ) {
+				$names[ $name_key ] = true;
+			}
 
 			if ( ! is_string( $name ) || 1 !== preg_match( '/^' . preg_quote( (string) $slug, '/' ) . '\/[a-z0-9]+(?:[-_][a-z0-9]+)*$/', $name ) ) {
 				$errors[] = sprintf( '%s has an invalid Core icon name.', $prefix );
@@ -268,6 +381,9 @@ final class CollectionBuild {
 				$errors[] = sprintf( '%s references an unknown variant.', $prefix );
 			}
 
+			if ( ! is_string( $icon['path'] ?? null ) ) {
+				$errors[] = $prefix . ' path must be a relative SVG path.';
+			}
 			$path = self::resolve_svg_path( $collection_dir, $icon['path'] ?? '' );
 			if ( null === $path ) {
 				$errors[] = sprintf( '%s references an unreadable SVG path.', $prefix );
@@ -281,7 +397,8 @@ final class CollectionBuild {
 				$errors[] = sprintf( '%1$s SVG is incompatible: %2$s', $prefix, $exception->getMessage() );
 			}
 
-			if ( ! hash_equals( (string) ( $icon['sha256'] ?? '' ), hash_file( 'sha256', $path ) ) ) {
+			$checksum = is_string( $icon['sha256'] ?? null ) ? $icon['sha256'] : '';
+			if ( '' === $checksum || ! hash_equals( $checksum, hash_file( 'sha256', $path ) ) ) {
 				$errors[] = sprintf( '%s checksum does not match.', $prefix );
 			}
 		}
@@ -297,6 +414,9 @@ final class CollectionBuild {
 	 * @return string|null
 	 */
 	private static function resolve_svg_path( $collection_dir, $relative_path ) {
+		if ( ! is_string( $relative_path ) ) {
+			return null;
+		}
 		$relative_path = ltrim( str_replace( '\\', '/', (string) $relative_path ), '/' );
 
 		if ( '' === $relative_path || false !== strpos( $relative_path, '..' ) || 'svg' !== strtolower( pathinfo( $relative_path, PATHINFO_EXTENSION ) ) ) {
@@ -306,7 +426,8 @@ final class CollectionBuild {
 		$base = realpath( $collection_dir );
 		$file = realpath( rtrim( $collection_dir, DIRECTORY_SEPARATOR ) . DIRECTORY_SEPARATOR . $relative_path );
 
-		if ( false === $base || false === $file || 0 !== strpos( $file, $base . DIRECTORY_SEPARATOR ) || ! is_readable( $file ) ) {
+		$source_path = rtrim( $collection_dir, DIRECTORY_SEPARATOR ) . DIRECTORY_SEPARATOR . $relative_path;
+		if ( false === $base || false === $file || is_link( $source_path ) || 0 !== strpos( $file, $base . DIRECTORY_SEPARATOR ) || ! is_file( $file ) || ! is_readable( $file ) ) {
 			return null;
 		}
 

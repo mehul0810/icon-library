@@ -223,12 +223,24 @@ if ( '' === $version || 1 !== preg_match( '/^[a-f0-9]{40}$/', $revision ) ) {
 	exit( 1 );
 }
 
+try {
+	CollectionBuild::validate_source_checkout( $source_dir, $config['source_url'], $config['license_file'] );
+	$license_source = CollectionBuild::get_contained_source_file( $source_dir, $config['license_file'] );
+} catch ( RuntimeException $exception ) {
+	fwrite( STDERR, $exception->getMessage() . "\n" );
+	exit( 1 );
+}
+
 if ( ! is_dir( $target_dir ) && ! mkdir( $target_dir, 0755, true ) ) {
 	fwrite( STDERR, "Could not create collection directory.\n" );
 	exit( 1 );
 }
 
-copy( $source_dir . '/' . $config['license_file'], $target_dir . '/LICENSE' );
+	$license_contents = file_get_contents( $license_source );
+if ( ! is_string( $license_contents ) || false === file_put_contents( $target_dir . '/LICENSE', $license_contents ) ) {
+	fwrite( STDERR, "Could not copy the collection license.\n" );
+	exit( 1 );
+}
 $icons             = array();
 $skipped           = array();
 $manifest_variants = array();
@@ -252,6 +264,10 @@ foreach ( $config['variants'] as $variant_slug => $variant ) {
 	sort( $files );
 
 	foreach ( $files as $file ) {
+		if ( is_link( $file ) || ! is_file( $file ) || ! is_readable( $file ) ) {
+			fwrite( STDERR, "Source collection contains an unreadable or symlinked SVG.\n" );
+			exit( 1 );
+		}
 		$slug      = basename( $file, '.svg' );
 		$is_filled = '-fill' === substr( $slug, -5 );
 		if ( 'bootstrap-icons' === $library && ( ( 'filled' === $variant_slug ) !== $is_filled ) ) {
@@ -386,7 +402,11 @@ if ( $errors ) {
 	exit( 1 );
 }
 
-file_put_contents( $target_dir . '/manifest.json', json_encode( $manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n" );
+$manifest_json = json_encode( $manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n";
+if ( false === file_put_contents( $target_dir . '/manifest.json', $manifest_json ) ) {
+	fwrite( STDERR, "Could not write collection manifest.\n" );
+	exit( 1 );
+}
 printf( "Imported %d icons into %s.\n", count( $icons ), $target_dir );
 if ( $skipped ) {
 	fwrite( STDERR, sprintf( "Skipped %d Core-incompatible icons. First examples: %s\n", count( $skipped ), implode( ', ', array_slice( $skipped, 0, 5 ) ) ) );

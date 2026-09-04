@@ -38,6 +38,14 @@ if ( 'unknown' === $version || null === $revision ) {
 	exit( 1 );
 }
 
+try {
+	CollectionBuild::validate_source_checkout( $source_dir, 'https://github.com/tailwindlabs/heroicons', 'LICENSE' );
+	$license_source = CollectionBuild::get_contained_source_file( $source_dir, 'LICENSE' );
+} catch ( RuntimeException $exception ) {
+	fwrite( STDERR, $exception->getMessage() . "\n" );
+	exit( 1 );
+}
+
 $variants = array(
 	'outline' => array(
 		'label'          => 'Outline',
@@ -58,8 +66,10 @@ if ( ! is_dir( $target_dir ) && ! mkdir( $target_dir, 0755, true ) ) {
 	exit( 1 );
 }
 
-if ( is_readable( $source_dir . '/LICENSE' ) ) {
-	copy( $source_dir . '/LICENSE', $target_dir . '/LICENSE' );
+	$license_contents = file_get_contents( $license_source );
+if ( ! is_string( $license_contents ) || false === file_put_contents( $target_dir . '/LICENSE', $license_contents ) ) {
+	fwrite( STDERR, "Could not copy Heroicons license.\n" );
+	exit( 1 );
 }
 
 $icons             = array();
@@ -80,17 +90,19 @@ foreach ( $variants as $variant_slug => $variant ) {
 	sort( $files );
 
 	foreach ( $files as $file ) {
+		if ( is_link( $file ) || ! is_file( $file ) || ! is_readable( $file ) ) {
+			fwrite( STDERR, "Heroicons source contains an unreadable or symlinked SVG.\n" );
+			exit( 1 );
+		}
 		$base_name = basename( $file, '.svg' );
 		$svg       = file_get_contents( $file );
 
 		try {
-			CollectionBuild::normalize_svg( $svg, ! $variant['coreCompatible'] );
+			$svg = CollectionBuild::normalize_svg( $svg, ! $variant['coreCompatible'] );
 		} catch ( RuntimeException $exception ) {
 			$skipped[] = $variant_slug . '/' . $base_name . ': ' . $exception->getMessage();
 			continue;
 		}
-
-		$svg = preg_replace( '/\sdata-[a-z0-9_-]+\s*=\s*(["\']).*?\1/is', '', $svg );
 
 		$target_relative = $variant_slug . '/' . $base_name . '.svg';
 		$target_file     = $target_dir . '/' . $target_relative;

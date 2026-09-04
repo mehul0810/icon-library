@@ -5,6 +5,10 @@
  * @package IconLibrary
  */
 
+if ( PHP_SAPI !== 'cli' ) {
+	exit( 1 );
+}
+
 $wp_load = getenv( 'ICON_LIBRARY_WP_LOAD' );
 if ( ! $wp_load || ! is_readable( $wp_load ) ) {
 	fwrite( STDERR, "Set ICON_LIBRARY_WP_LOAD to a readable WordPress wp-load.php path.\n" );

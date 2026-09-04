@@ -65,7 +65,12 @@ class CoreIconRegistrarTest extends TestCase {
 		$this->assertArrayNotHasKey( 'test/one-solid', $registered['icons'] );
 		$this->assertArrayNotHasKey( 'test-solid/one-mini', $registered['icons'] );
 		$registrar = $this->style_registrar();
-		$registrar->register_icon_block( array( 'blockName' => 'core/icon', 'attrs' => array( 'icon' => 'test/one-solid' ) ) );
+		$registrar->register_icon_block(
+			array(
+				'blockName' => 'core/icon',
+				'attrs'     => array( 'icon' => 'test/one-solid' ),
+			)
+		);
 		$this->assertArrayHasKey( 'test/one-solid', $GLOBALS['icon_library_test_registered']['icons'] );
 	}
 
@@ -222,5 +227,37 @@ class CoreIconRegistrarTest extends TestCase {
 			)
 		);
 		$this->assertArrayHasKey( 'heroicons/0-24-solid', $GLOBALS['icon_library_test_registered']['icons'] );
+	}
+
+	public function test_lazy_resolution_does_not_load_unrelated_collections() {
+		$GLOBALS['icon_library_test_registered'] = array(
+			'collections' => array(),
+			'icons'       => array(),
+		);
+		$registry                                = $this->getMockBuilder( CollectionRegistry::class )->disableOriginalConstructor()->onlyMethods( array( 'get_available_collection_slugs', 'get_manifest', 'get_svg_path' ) )->getMock();
+		$registry->method( 'get_available_collection_slugs' )->willReturn( array( 'test', 'unrelated' ) );
+		$registry->expects( $this->once() )->method( 'get_manifest' )->with( 'test' )->willReturn(
+			array(
+				'name'  => 'Test',
+				'icons' => array(
+					array(
+						'coreIconName' => 'test/one',
+						'label'        => 'One',
+						'path'         => 'one.svg',
+					),
+				),
+			)
+		);
+		$registry->method( 'get_svg_path' )->willReturn( __FILE__ );
+
+		$registrar = new CoreIconRegistrar( $registry );
+		$registrar->register_icon_block(
+			array(
+				'blockName' => 'core/icon',
+				'attrs'     => array( 'icon' => 'test/one' ),
+			)
+		);
+
+		$this->assertArrayHasKey( 'test/one', $GLOBALS['icon_library_test_registered']['icons'] );
 	}
 }

@@ -29,8 +29,8 @@ class FontAwesomeManifestTest extends TestCase {
 			file_get_contents( dirname( __DIR__ ) . '/assets/icons/font-awesome/manifest.json' ),
 			true
 		);
-		$search = $this->find_icon( $manifest, 'font-awesome/solid/search' );
-		$apple  = $this->find_icon( $manifest, 'font-awesome/brands/apple' );
+		$search   = $this->find_icon( $manifest, 'font-awesome/solid/search' );
+		$apple    = $this->find_icon( $manifest, 'font-awesome/brands/apple' );
 
 		$this->assertContains( 'maps', $search['categories'] );
 		$this->assertContains( 'magnifying glass', $search['keywords'] );

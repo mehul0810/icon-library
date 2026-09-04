@@ -24,6 +24,22 @@ icons. `IconLibrary\CoreIconRegistrar` maps enabled plugin manifests to
 passed by absolute `file_path`, allowing Core to load and sanitize their
 contents lazily when the REST API or renderer requests them.
 
+## Extension Hooks
+
+Collection providers can register a validated external catalog with the
+`icon_library_collection_providers` filter. A provider supplies a slug and a
+manifest callback/value, and may supply an SVG path or content callback. Slugs
+must be lowercase hyphenated identifiers; SVG paths must resolve to readable
+`.svg` files and all content is still passed through Core's sanitizer.
+
+The following filters are available for integrations:
+
+- `icon_library_collections`: collection summaries shown in the admin and REST catalog.
+- `icon_library_enabled_collections`: enabled collection slugs.
+- `icon_library_enabled_variants`: enabled variants for one collection.
+- `icon_library_icon_manifest`: a loaded manifest, its slug, and source path.
+- `icon_library_svg_markup`: final SVG markup, re-escaped through the plugin allowlist.
+
 ## Manifest Shape
 
 Bundled libraries live under `assets/icons/{collection}/manifest.json`.
@@ -71,6 +87,7 @@ The core ID intentionally uses one namespace separator because the current
 - `POST /wp-json/icon-library/v1/collections/{slug}/deactivate`
 - `POST /wp-json/icon-library/v1/collections/{slug}/variants/{variant}/activate`
 - `POST /wp-json/icon-library/v1/collections/{slug}/variants/{variant}/deactivate`
+- `GET /wp-json/icon-library/v1/icons` (paginated catalog with variant facets)
 
 Library mutations require `manage_options`. Read endpoints require the same
 editor-style access as the Core icon endpoint. Icon discovery and rendering use
@@ -103,6 +120,10 @@ hides it from new selections while preserving existing blocks. Plugin uninstall
 removes custom icon metadata and the plugin-owned SVG files, which prevents
 retained post content from resolving those icons.
 
+Archived custom icons can be restored or permanently purged from the Custom
+Icons screen. Purging removes the stored SVG and intentionally stops existing
+blocks from resolving that icon.
+
 ## Importing bundled libraries
 
 ```bash
@@ -125,6 +146,9 @@ composer package
 `composer package` creates `build/icon-library.1.0.0.zip` from an explicit
 production allowlist. SVG files referenced by validated library manifests
 enter the archive, along with the documented Heroicons legacy size aliases.
+The root `.distignore` mirrors the development paths excluded by compatible
+WordPress distribution tooling; the built-in packager keeps its stricter
+allowlist so an unexpected repository file cannot enter a release.
 
 GitHub Actions runs the same checks and production packaging for semver release
 and pre-release tags, then uploads the ZIP as a workflow artifact and GitHub

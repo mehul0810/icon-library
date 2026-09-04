@@ -64,6 +64,18 @@ class RestController {
 
 		register_rest_route(
 			Plugin::REST_NAMESPACE,
+			'/icons',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_icons' ),
+				'permission_callback' => array( $this, 'can_read_icons' ),
+				'args'                => $this->get_icon_query_args(),
+				'schema'              => array( $this, 'get_icon_catalog_schema' ),
+			)
+		);
+
+		register_rest_route(
+			Plugin::REST_NAMESPACE,
 			'/collections/(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)/activate',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -147,6 +159,18 @@ class RestController {
 				),
 			)
 		);
+
+		foreach ( array( 'restore', 'purge' ) as $operation ) {
+			register_rest_route(
+				Plugin::REST_NAMESPACE,
+				'/custom-icons/(?P<name>[a-z0-9]+(?:-[a-z0-9]+)*)/' . $operation,
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'restore' === $operation ? 'restore_custom_icon' : 'purge_custom_icon' ),
+					'permission_callback' => array( $this, 'can_manage_collections' ),
+				)
+			);
+		}
 	}
 
 	/**
@@ -156,9 +180,8 @@ class RestController {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function create_custom_icon( WP_REST_Request $request ) {
-		$result = $this->custom_icons->create( $request['name'], $request['label'], $request['svg'] );
+		$result = $this->custom_icons->create( $request->get_param( 'name' ), $request->get_param( 'label' ), $request->get_param( 'svg' ) );
 		if ( is_wp_error( $result ) ) {
-			$result->add_data( array( 'status' => 400 ) );
 			return $result;
 		}
 		return new WP_REST_Response( $result, 201 );
@@ -171,7 +194,7 @@ class RestController {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function update_custom_icon( WP_REST_Request $request ) {
-		$result = $this->custom_icons->update_label( $request['name'], $request['label'] );
+		$result = $this->custom_icons->update_label( $request->get_param( 'name' ), $request->get_param( 'label' ) );
 		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
 	}
 
@@ -182,7 +205,29 @@ class RestController {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function delete_custom_icon( WP_REST_Request $request ) {
-		$result = $this->custom_icons->delete( $request['name'] );
+		$result = $this->custom_icons->delete( $request->get_param( 'name' ) );
+		return is_wp_error( $result ) ? $result : rest_ensure_response( array( 'deleted' => true ) );
+	}
+
+	/**
+	 * Restores an archived custom icon.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function restore_custom_icon( WP_REST_Request $request ) {
+		$result = $this->custom_icons->restore( $request->get_param( 'name' ) );
+		return is_wp_error( $result ) ? $result : rest_ensure_response( array( 'restored' => true ) );
+	}
+
+	/**
+	 * Permanently removes an archived custom icon.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function purge_custom_icon( WP_REST_Request $request ) {
+		$result = $this->custom_icons->purge( $request->get_param( 'name' ) );
 		return is_wp_error( $result ) ? $result : rest_ensure_response( array( 'deleted' => true ) );
 	}
 
@@ -196,8 +241,8 @@ class RestController {
 			return true;
 		}
 
-		foreach ( get_post_types( array( 'show_in_rest' => true ), 'objects' ) as $post_type ) {
-			if ( current_user_can( $post_type->cap->edit_posts ) ) {
+		foreach ( (array) get_post_types( array( 'show_in_rest' => true ), 'objects' ) as $post_type ) {
+			if ( isset( $post_type->cap->edit_posts ) && current_user_can( $post_type->cap->edit_posts ) ) {
 				return true;
 			}
 		}
@@ -233,6 +278,82 @@ class RestController {
 	 */
 	public function get_collections() {
 		return rest_ensure_response( array_values( $this->collection_registry->get_collections() ) );
+	}
+
+	/**
+	 * Returns a paginated icon catalog for integrations that cannot use Core's
+	 * native discovery routes.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @return WP_REST_Response
+	 */
+	public function get_icons( WP_REST_Request $request ) {
+		$page     = $request->get_param( 'page' );
+		$per_page = $request->get_param( 'per_page' );
+		$page     = null === $page ? 1 : $page;
+		$per_page = null === $per_page ? 100 : $per_page;
+		$query    = $this->collection_registry->query_icons(
+			array(
+				'collection' => $request->get_param( 'collection' ),
+				'variant'    => $request->get_param( 'variant' ),
+				'category'   => $request->get_param( 'category' ),
+				'search'     => $request->get_param( 'search' ),
+				'page'       => $page,
+				'per_page'   => $per_page,
+			)
+		);
+		$page     = max( 1, absint( $page ) );
+		$per_page = min( 100, max( 1, absint( $per_page ) ) );
+
+		return rest_ensure_response(
+			array(
+				'items'          => $query['items'],
+				'total'          => $query['total'],
+				'page'           => $page,
+				'per_page'       => $per_page,
+				'total_pages'    => (int) ceil( $query['total'] / $per_page ),
+				'variant_counts' => $query['variant_counts'],
+			)
+		);
+	}
+
+	/**
+	 * Returns the icon catalog response schema.
+	 *
+	 * @return array
+	 */
+	public function get_icon_catalog_schema() {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'icon-library-icons',
+			'type'       => 'object',
+			'properties' => array(
+				'items'          => array(
+					'type'     => 'array',
+					'readonly' => true,
+				),
+				'total'          => array(
+					'type'     => 'integer',
+					'readonly' => true,
+				),
+				'page'           => array(
+					'type'     => 'integer',
+					'readonly' => true,
+				),
+				'per_page'       => array(
+					'type'     => 'integer',
+					'readonly' => true,
+				),
+				'total_pages'    => array(
+					'type'     => 'integer',
+					'readonly' => true,
+				),
+				'variant_counts' => array(
+					'type'     => 'object',
+					'readonly' => true,
+				),
+			),
+		);
 	}
 
 	/**
@@ -283,10 +404,20 @@ class RestController {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	private function set_variant_state( WP_REST_Request $request, $enabled ) {
-		$slug       = sanitize_key( $request['slug'] );
-		$variant    = sanitize_key( $request['variant'] );
-		$collection = $this->collection_registry->get_collection( $slug );
-		$variants   = null === $collection ? array() : array_map( 'sanitize_key', wp_list_pluck( $collection['variants'] ?? array(), 'slug' ) );
+		$slug         = is_string( $request->get_param( 'slug' ) ) ? sanitize_key( $request->get_param( 'slug' ) ) : '';
+		$variant      = is_string( $request->get_param( 'variant' ) ) ? sanitize_key( $request->get_param( 'variant' ) ) : '';
+		$collection   = $this->collection_registry->get_collection( $slug );
+		$variant_rows = $collection && isset( $collection['variants'] ) && is_array( $collection['variants'] ) ? $collection['variants'] : array();
+		$variants     = null === $collection ? array() : array_values(
+			array_filter(
+				array_map(
+					static function ( $variant_slug ) {
+						return is_string( $variant_slug ) ? sanitize_key( $variant_slug ) : '';
+					},
+					wp_list_pluck( $variant_rows, 'slug' )
+				)
+			)
+		);
 		if ( null === $collection || ! in_array( $variant, $variants, true ) ) {
 			return new WP_Error( 'icon_library_variant_not_found', __( 'Icon library variant not found.', 'icon-library' ), array( 'status' => 404 ) );
 		}
@@ -307,7 +438,7 @@ class RestController {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	private function set_collection_state( WP_REST_Request $request, $enabled ) {
-		$slug       = sanitize_key( $request['slug'] );
+		$slug       = is_string( $request->get_param( 'slug' ) ) ? sanitize_key( $request->get_param( 'slug' ) ) : '';
 		$collection = $this->collection_registry->get_collection( $slug );
 
 		if ( null === $collection ) {
@@ -357,6 +488,41 @@ class RestController {
 			'variant' => array(
 				'type'     => 'string',
 				'required' => true,
+			),
+		);
+	}
+
+	/**
+	 * Returns icon catalog query arguments.
+	 *
+	 * @return array
+	 */
+	private function get_icon_query_args() {
+		return array(
+			'collection' => array( 'type' => 'string' ),
+			'variant'    => array( 'type' => 'string' ),
+			'category'   => array( 'type' => 'string' ),
+			'search'     => array(
+				'type'      => 'string',
+				'maxLength' => 200,
+			),
+			'page'       => array(
+				'type'              => 'integer',
+				'default'           => 1,
+				'minimum'           => 1,
+				'maximum'           => CollectionRegistry::MAX_PAGE,
+				'validate_callback' => static function ( $value ) {
+					return is_numeric( $value ) && 1 <= (int) $value;
+				},
+			),
+			'per_page'   => array(
+				'type'              => 'integer',
+				'default'           => 100,
+				'minimum'           => 1,
+				'maximum'           => 100,
+				'validate_callback' => static function ( $value ) {
+					return is_numeric( $value ) && 1 <= (int) $value && 100 >= (int) $value;
+				},
 			),
 		);
 	}

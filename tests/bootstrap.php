@@ -204,6 +204,10 @@ function wp_mkdir_p( $directory ) {
 	return is_dir( $directory ) || mkdir( $directory, 0775, true );
 }
 
+function wp_delete_file( $file ) {
+	return file_exists( $file ) ? unlink( $file ) : true;
+}
+
 function current_user_can( $capability ) {
 	return ! empty( $GLOBALS['icon_library_test_capabilities'][ $capability ] );
 }

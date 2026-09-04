@@ -30,6 +30,20 @@ class ManifestLoader {
 	private $manifests = array();
 
 	/**
+	 * In-request resolved collection directories.
+	 *
+	 * @var array<string,string|null>
+	 */
+	private $collection_bases = array();
+
+	/**
+	 * Discovered collection slugs for this request.
+	 *
+	 * @var string[]|null
+	 */
+	private $collection_slugs;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string $base_dir Base icon asset directory.
@@ -44,15 +58,20 @@ class ManifestLoader {
 	 * @return string[]
 	 */
 	public function get_collection_slugs() {
+		if ( null !== $this->collection_slugs ) {
+			return $this->collection_slugs;
+		}
 		if ( ! is_dir( $this->base_dir ) ) {
-			return array();
+			$this->collection_slugs = array();
+			return $this->collection_slugs;
 		}
 
 		$slugs = array();
 		$dirs  = glob( $this->base_dir . '*', GLOB_ONLYDIR );
 
 		if ( ! is_array( $dirs ) ) {
-			return array();
+			$this->collection_slugs = array();
+			return $this->collection_slugs;
 		}
 
 		foreach ( $dirs as $dir ) {
@@ -65,7 +84,8 @@ class ManifestLoader {
 
 		sort( $slugs );
 
-		return $slugs;
+		$this->collection_slugs = $slugs;
+		return $this->collection_slugs;
 	}
 
 	/**
@@ -75,7 +95,7 @@ class ManifestLoader {
 	 * @return array|null
 	 */
 	public function get_manifest( $slug ) {
-		$slug = sanitize_key( $slug );
+		$slug = is_string( $slug ) ? sanitize_key( $slug ) : '';
 
 		if ( ! $this->is_valid_slug( $slug ) ) {
 			return null;
@@ -91,8 +111,10 @@ class ManifestLoader {
 			return null;
 		}
 
-		$cache_key = 'manifest_' . $slug;
-		$modified  = filemtime( $path );
+		// Include the package version so deterministic build timestamps cannot
+		// preserve an older manifest in a persistent object cache after upgrade.
+		$cache_key = 'manifest_' . $slug . '_' . ( defined( 'ICON_LIBRARY_VERSION' ) ? ICON_LIBRARY_VERSION : 'dev' );
+		$modified  = (int) filemtime( $path );
 		$cached    = wp_cache_get( $cache_key, 'icon_library' );
 		$manifest  = is_array( $cached ) && isset( $cached['modified'], $cached['manifest'] ) && $modified === $cached['modified'] ? $cached['manifest'] : false;
 
@@ -163,6 +185,9 @@ class ManifestLoader {
 	 * @return string|null
 	 */
 	public function get_svg_path( $collection_slug, $relative_path ) {
+		if ( ! is_string( $collection_slug ) || ! is_string( $relative_path ) ) {
+			return null;
+		}
 		$collection_slug = sanitize_key( $collection_slug );
 		$relative_path   = ltrim( str_replace( '\\', '/', (string) $relative_path ), '/' );
 
@@ -170,10 +195,14 @@ class ManifestLoader {
 			return null;
 		}
 
-		$base = realpath( $this->base_dir . $collection_slug );
-		$file = realpath( $this->base_dir . $collection_slug . '/' . $relative_path );
+		if ( ! array_key_exists( $collection_slug, $this->collection_bases ) ) {
+			$this->collection_bases[ $collection_slug ] = realpath( $this->base_dir . $collection_slug );
+		}
+		$base   = $this->collection_bases[ $collection_slug ];
+		$source = false !== $base ? $base . '/' . $relative_path : '';
+		$file   = false !== $base ? realpath( $source ) : false;
 
-		if ( false === $base || false === $file || 0 !== strpos( $file, $base . DIRECTORY_SEPARATOR ) ) {
+		if ( false === $base || false === $file || is_link( $source ) || 0 !== strpos( $file, $base . DIRECTORY_SEPARATOR ) ) {
 			return null;
 		}
 

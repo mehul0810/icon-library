@@ -30,7 +30,9 @@ class Plugin {
 		$core_registrar      = new CoreIconRegistrar( $collection_registry );
 		$rest_controller     = new RestController( $collection_registry, $custom_icons );
 
-		add_action( 'init', array( $core_registrar, 'register_icons' ), 20 );
+		// Core collections are registered only for icon REST requests or saved
+		// blocks that actually need them. This avoids catalog work on public pages.
+		add_filter( 'rest_pre_dispatch', array( $core_registrar, 'prepare_core_icon_request' ), 10, 3 );
 		add_action( 'wp', array( $core_registrar, 'register_queried_post_icons' ) );
 		add_filter( 'render_block_data', array( $core_registrar, 'register_icon_block' ) );
 		add_action( 'enqueue_block_assets', array( $core_registrar, 'enqueue_styles' ) );
@@ -41,7 +43,7 @@ class Plugin {
 		if ( is_admin() ) {
 			$admin_page = new AdminPage( $collection_registry, $sanitizer );
 			$admin_page->register();
-			( new AdminActions( $collection_registry ) )->register();
+			( new AdminActions( $collection_registry, $custom_icons ) )->register();
 		}
 	}
 
