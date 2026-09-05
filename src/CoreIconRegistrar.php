@@ -96,14 +96,20 @@ class CoreIconRegistrar {
 
 	/**
 	 * Registers bundled icons with the WordPress core icon registry.
+	 *
+	 * @param string $requested_namespace Optional namespace restriction.
+	 * @param bool   $metadata_only Whether to skip icon registration.
 	 */
-	public function register_icons() {
+	public function register_icons( $requested_namespace = '', $metadata_only = false ) {
 		if ( ! function_exists( 'wp_register_icon_collection' ) || ! function_exists( 'wp_register_icon' ) ) {
 			return;
 		}
 
 		foreach ( $this->collection_registry->get_enabled_collection_slugs() as $collection_slug ) {
 			if ( ! is_string( $collection_slug ) || '' === $collection_slug ) {
+				continue;
+			}
+			if ( $requested_namespace && $requested_namespace !== $collection_slug && 0 !== strpos( $requested_namespace, $collection_slug . '-' ) ) {
 				continue;
 			}
 			$manifest         = $this->collection_registry->get_manifest( $collection_slug );
@@ -123,6 +129,9 @@ class CoreIconRegistrar {
 			$this->set_core_incompatible_variants( $collection_slug, $manifest );
 
 			$styles = $this->register_style_collections( $collection_slug, $manifest, $enabled_variants );
+			if ( $metadata_only ) {
+				continue;
+			}
 
 			foreach ( $manifest['icons'] as $icon ) {
 				if ( ! is_array( $icon ) ) {
@@ -133,6 +142,9 @@ class CoreIconRegistrar {
 				}
 				$variant = isset( $icon['variant'] ) && is_string( $icon['variant'] ) ? sanitize_key( $icon['variant'] ) : '';
 				if ( $variant && ! in_array( $variant, $enabled_variants, true ) ) {
+					continue;
+				}
+				if ( $requested_namespace && $requested_namespace !== $collection_slug && ( $styles[ $variant ] ?? '' ) !== $requested_namespace ) {
 					continue;
 				}
 				if ( $variant && isset( $styles[ $variant ] ) ) {
@@ -186,8 +198,12 @@ class CoreIconRegistrar {
 		}
 
 		$route = $request->get_route();
-		if ( '/wp/v2/icons' === $route || '/wp/v2/icon-collections' === $route || 1 === preg_match( '#^/wp/v2/icons/[^/]+$#', $route ) ) {
+		if ( '/wp/v2/icon-collections' === $route ) {
+			$this->register_icons( '', true );
+		} elseif ( '/wp/v2/icons' === $route ) {
 			$this->register_icons();
+		} elseif ( 1 === preg_match( '#^/wp/v2/icons/([^/]+)$#', $route, $matches ) ) {
+			$this->register_icons( rawurldecode( $matches[1] ) );
 		} elseif ( 1 === preg_match( '#^/wp/v2/icons/([^/]+/[^/]+)$#', $route, $matches ) ) {
 			$this->register_icon_by_name( rawurldecode( $matches[1] ) );
 		}
@@ -341,48 +357,7 @@ class CoreIconRegistrar {
 		}
 
 		$this->set_core_incompatible_variants( $library, $manifest );
-		foreach ( $manifest['icons'] as $icon ) {
-			if ( ! is_array( $icon ) || ! isset( $icon['coreIconName'] ) || ! is_string( $icon['coreIconName'] ) ) {
-				continue;
-			}
-			$base_name    = $icon['coreIconName'];
-			$icon_variant = isset( $icon['variant'] ) && is_string( $icon['variant'] ) ? sanitize_key( $icon['variant'] ) : '';
-			if ( '' === $base_name ) {
-				continue;
-			}
-			$index[ $base_name ] = array(
-				'library'  => $library,
-				'manifest' => $manifest,
-				'icon'     => $icon,
-			);
-			if ( $icon_variant ) {
-				$style = $library . '-' . $icon_variant;
-				$index[ $style . substr( $base_name, strlen( $library ) ) ] = array(
-					'library'  => $library,
-					'manifest' => $manifest,
-					'icon'     => $icon,
-					'style'    => $style,
-					'variant'  => $icon_variant,
-				);
-			}
-			if ( 'heroicons' === $library && 'solid' === $icon_variant ) {
-				if ( ! isset( $icon['path'] ) || ! is_string( $icon['path'] ) ) {
-					continue;
-				}
-				$base = basename( $icon['path'], '.svg' );
-				if ( '' === $base || 1 !== preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $base ) ) {
-					continue;
-				}
-				foreach ( array( '24-solid', '20-solid', '16-solid' ) as $legacy_variant ) {
-					$index[ $library . '/' . $base . '-' . $legacy_variant ] = array(
-						'library'  => $library,
-						'manifest' => $manifest,
-						'icon'     => $icon,
-						'legacy'   => true,
-					);
-				}
-			}
-		}
+		$index = IconNameIndex::build( $library, $manifest );
 
 		$this->collection_indexes[ $library ] = $index;
 		return $index;

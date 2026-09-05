@@ -48,6 +48,7 @@ class AdminPage {
 	public function register() {
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'wp_ajax_icon_library_preview_page', array( $this, 'preview_page' ) );
 	}
 
 	/**
@@ -92,10 +93,12 @@ class AdminPage {
 			'icon-library-admin',
 			'iconLibraryAdmin',
 			array(
-				'nonce'      => wp_create_nonce( 'wp_rest' ),
-				'restPath'   => '/' . Plugin::REST_NAMESPACE . '/collections/',
-				'customPath' => '/' . Plugin::REST_NAMESPACE . '/custom-icons',
-				'i18n'       => array(
+				'nonce'        => wp_create_nonce( 'wp_rest' ),
+				'previewUrl'   => admin_url( 'admin-ajax.php' ),
+				'previewNonce' => wp_create_nonce( 'icon_library_preview' ),
+				'restPath'     => '/' . Plugin::REST_NAMESPACE . '/collections/',
+				'customPath'   => '/' . Plugin::REST_NAMESPACE . '/custom-icons',
+				'i18n'         => array(
 					'updating'       => __( 'Updating library...', 'icon-library' ),
 					'error'          => __( 'The library could not be updated. Try again.', 'icon-library' ),
 					'uploading'      => __( 'Validating and storing icon...', 'icon-library' ),
@@ -212,6 +215,12 @@ class AdminPage {
 				$icons[] = $icon;
 			}
 		}
+		$active_total   = count( $icons );
+		$archived_total = count( $archived );
+		$active_page    = $this->custom_page_number( 'custom-page', $active_total );
+		$archived_page  = $this->custom_page_number( 'archive-page', $archived_total );
+		$icons          = array_slice( $icons, ( $active_page - 1 ) * 48, 48 );
+		$archived       = array_slice( $archived, ( $archived_page - 1 ) * 48, 48 );
 		?>
 		<section class="icon-library-panel icon-library-custom">
 			<form class="icon-library-custom-upload" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data">
@@ -240,6 +249,7 @@ class AdminPage {
 						<?php $this->render_custom_icon( $icon ); ?>
 					<?php endforeach; ?>
 			</div>
+				<?php $this->render_custom_pagination( 'custom-page', $active_page, $active_total ); ?>
 		<?php endif; ?>
 		<?php if ( ! empty( $archived ) ) : ?>
 			<h2 class="icon-library-custom-heading"><?php esc_html_e( 'Archived Icons', 'icon-library' ); ?></h2>
@@ -248,9 +258,46 @@ class AdminPage {
 					<?php $this->render_archived_custom_icon( $icon ); ?>
 				<?php endforeach; ?>
 			</div>
+			<?php $this->render_custom_pagination( 'archive-page', $archived_page, $archived_total ); ?>
 		<?php endif; ?>
 		</section>
 		<?php
+	}
+
+	/**
+	 * Bounds custom icon pagination to existing pages.
+	 *
+	 * @param string $key Query argument.
+	 * @param int    $total Matching icons.
+	 * @return int
+	 */
+	private function custom_page_number( $key, $total ) {
+		// Read-only navigation; this does not modify icon data.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$page = isset( $_GET[ $key ] ) && is_scalar( $_GET[ $key ] ) ? absint( $_GET[ $key ] ) : 1;
+		return max( 1, min( $page, (int) ceil( $total / 48 ) ) );
+	}
+
+	/**
+	 * Renders independent active/archive pagination with a no-JavaScript fallback.
+	 *
+	 * @param string $key Query argument.
+	 * @param int    $page Current page.
+	 * @param int    $total Matching icons.
+	 */
+	private function render_custom_pagination( $key, $page, $total ) {
+		if ( $total <= 48 ) {
+			return;
+		}
+		$links = paginate_links(
+			array(
+				'base'    => add_query_arg( $key, '%#%' ),
+				'current' => $page,
+				'total'   => (int) ceil( $total / 48 ),
+				'type'    => 'list',
+			)
+		);
+		echo '<nav class="icon-library-custom-pagination" aria-label="' . esc_attr__( 'Custom icon pages', 'icon-library' ) . '">' . wp_kses_post( $links ) . '</nav>';
 	}
 
 	/**
@@ -811,6 +858,41 @@ class AdminPage {
 		);
 
 		return $categories;
+	}
+
+	/** Sends only one preview grid, without rendering the admin shell or facets. */
+	public function preview_page() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'code' => 'icon_library_forbidden' ), 403 );
+			return;
+		}
+		check_ajax_referer( 'icon_library_preview', '_ajax_nonce' );
+		$filters = $this->get_filters( array() );
+		if ( '' === $filters['collection'] ) {
+			wp_send_json_error( array( 'code' => 'icon_library_invalid_collection' ), 400 );
+			return;
+		}
+		$page  = isset( $_GET['icon-page'] ) && is_scalar( $_GET['icon-page'] ) ? min( CollectionRegistry::MAX_PAGE, max( 1, absint( $_GET['icon-page'] ) ) ) : 1;
+		$query = $this->collection_registry->query_icons(
+			array_merge(
+				$filters,
+				array(
+					'page'     => $page,
+					'per_page' => 72,
+				)
+			)
+		);
+		ob_start();
+		$this->render_icon_grid( $query['items'] );
+		$html = ob_get_clean();
+		wp_send_json_success(
+			array(
+				'html'     => $html,
+				'page'     => $page,
+				'total'    => $query['total'],
+				'has_more' => $page * 72 < $query['total'],
+			)
+		);
 	}
 
 	/**

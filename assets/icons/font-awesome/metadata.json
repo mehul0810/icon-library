@@ -1,0 +1,381 @@
+{
+    "schemaVersion": 2,
+    "slug": "font-awesome",
+    "name": "Font Awesome Free",
+    "description": "The free Classic Solid and Regular styles plus the Brands style from Font Awesome.",
+    "version": "7.3.1",
+    "license": {
+        "name": "CC BY 4.0",
+        "url": "https://fontawesome.com/license/free"
+    },
+    "source": {
+        "name": "FortAwesome/Font-Awesome",
+        "url": "https://github.com/FortAwesome/Font-Awesome",
+        "revision": "14c65a3747d0f3b751f15831fc719236aea8729d"
+    },
+    "variants": [
+        {
+            "slug": "solid",
+            "label": "Solid",
+            "iconCount": 2001
+        },
+        {
+            "slug": "regular",
+            "label": "Regular",
+            "iconCount": 273
+        },
+        {
+            "slug": "brands",
+            "label": "Brands",
+            "iconCount": 609
+        }
+    ],
+    "categories": [
+        {
+            "slug": "accessibility",
+            "label": "Accessibility",
+            "iconCount": 24
+        },
+        {
+            "slug": "alert",
+            "label": "Alert",
+            "iconCount": 10
+        },
+        {
+            "slug": "alphabet",
+            "label": "Alphabet",
+            "iconCount": 29
+        },
+        {
+            "slug": "animals",
+            "label": "Animals",
+            "iconCount": 25
+        },
+        {
+            "slug": "arrows",
+            "label": "Arrows",
+            "iconCount": 119
+        },
+        {
+            "slug": "astronomy",
+            "label": "Astronomy",
+            "iconCount": 20
+        },
+        {
+            "slug": "automotive",
+            "label": "Automotive",
+            "iconCount": 29
+        },
+        {
+            "slug": "buildings",
+            "label": "Buildings",
+            "iconCount": 74
+        },
+        {
+            "slug": "business",
+            "label": "Business",
+            "iconCount": 98
+        },
+        {
+            "slug": "camping",
+            "label": "Camping",
+            "iconCount": 37
+        },
+        {
+            "slug": "charity",
+            "label": "Charity",
+            "iconCount": 19
+        },
+        {
+            "slug": "charts-diagrams",
+            "label": "Charts + Diagrams",
+            "iconCount": 18
+        },
+        {
+            "slug": "childhood",
+            "label": "Childhood",
+            "iconCount": 25
+        },
+        {
+            "slug": "clothing-fashion",
+            "label": "Clothing + Fashion",
+            "iconCount": 12
+        },
+        {
+            "slug": "coding",
+            "label": "Coding",
+            "iconCount": 51
+        },
+        {
+            "slug": "communication",
+            "label": "Communication",
+            "iconCount": 57
+        },
+        {
+            "slug": "connectivity",
+            "label": "Connectivity",
+            "iconCount": 14
+        },
+        {
+            "slug": "construction",
+            "label": "Construction",
+            "iconCount": 30
+        },
+        {
+            "slug": "design",
+            "label": "Design",
+            "iconCount": 54
+        },
+        {
+            "slug": "devices-hardware",
+            "label": "Devices + Hardware",
+            "iconCount": 44
+        },
+        {
+            "slug": "disaster",
+            "label": "Disaster + Crisis",
+            "iconCount": 37
+        },
+        {
+            "slug": "editing",
+            "label": "Editing",
+            "iconCount": 47
+        },
+        {
+            "slug": "education",
+            "label": "Education",
+            "iconCount": 24
+        },
+        {
+            "slug": "emoji",
+            "label": "Emoji",
+            "iconCount": 36
+        },
+        {
+            "slug": "energy",
+            "label": "Energy",
+            "iconCount": 37
+        },
+        {
+            "slug": "files",
+            "label": "Files",
+            "iconCount": 37
+        },
+        {
+            "slug": "film-video",
+            "label": "Film + Video",
+            "iconCount": 23
+        },
+        {
+            "slug": "food-beverage",
+            "label": "Food + Beverage",
+            "iconCount": 48
+        },
+        {
+            "slug": "fruits-vegetables",
+            "label": "Fruits + Vegetables",
+            "iconCount": 6
+        },
+        {
+            "slug": "gaming",
+            "label": "Gaming",
+            "iconCount": 46
+        },
+        {
+            "slug": "gender",
+            "label": "Genders",
+            "iconCount": 15
+        },
+        {
+            "slug": "halloween",
+            "label": "Halloween",
+            "iconCount": 13
+        },
+        {
+            "slug": "hands",
+            "label": "Hands",
+            "iconCount": 33
+        },
+        {
+            "slug": "holidays",
+            "label": "Holidays",
+            "iconCount": 14
+        },
+        {
+            "slug": "household",
+            "label": "Household",
+            "iconCount": 48
+        },
+        {
+            "slug": "humanitarian",
+            "label": "Humanitarian",
+            "iconCount": 334
+        },
+        {
+            "slug": "logistics",
+            "label": "Logistics",
+            "iconCount": 58
+        },
+        {
+            "slug": "maps",
+            "label": "Maps",
+            "iconCount": 139
+        },
+        {
+            "slug": "maritime",
+            "label": "Maritime",
+            "iconCount": 14
+        },
+        {
+            "slug": "marketing",
+            "label": "Marketing",
+            "iconCount": 24
+        },
+        {
+            "slug": "mathematics",
+            "label": "Mathematics",
+            "iconCount": 23
+        },
+        {
+            "slug": "media-playback",
+            "label": "Media Playback",
+            "iconCount": 39
+        },
+        {
+            "slug": "medical-health",
+            "label": "Medical + Health",
+            "iconCount": 114
+        },
+        {
+            "slug": "money",
+            "label": "Money",
+            "iconCount": 73
+        },
+        {
+            "slug": "moving",
+            "label": "Moving",
+            "iconCount": 16
+        },
+        {
+            "slug": "music-audio",
+            "label": "Music + Audio",
+            "iconCount": 23
+        },
+        {
+            "slug": "nature",
+            "label": "Nature",
+            "iconCount": 28
+        },
+        {
+            "slug": "numbers",
+            "label": "Numbers",
+            "iconCount": 10
+        },
+        {
+            "slug": "photos-images",
+            "label": "Photos + Images",
+            "iconCount": 25
+        },
+        {
+            "slug": "political",
+            "label": "Political",
+            "iconCount": 20
+        },
+        {
+            "slug": "punctuation-symbols",
+            "label": "Punctuation + Symbols",
+            "iconCount": 32
+        },
+        {
+            "slug": "religion",
+            "label": "Religion",
+            "iconCount": 44
+        },
+        {
+            "slug": "science",
+            "label": "Science",
+            "iconCount": 33
+        },
+        {
+            "slug": "science-fiction",
+            "label": "Science Fiction",
+            "iconCount": 13
+        },
+        {
+            "slug": "security",
+            "label": "Security",
+            "iconCount": 61
+        },
+        {
+            "slug": "shapes",
+            "label": "Shapes",
+            "iconCount": 30
+        },
+        {
+            "slug": "shopping",
+            "label": "Shopping",
+            "iconCount": 62
+        },
+        {
+            "slug": "social",
+            "label": "Social",
+            "iconCount": 35
+        },
+        {
+            "slug": "spinners",
+            "label": "Spinners",
+            "iconCount": 28
+        },
+        {
+            "slug": "sports-fitness",
+            "label": "Sports + Fitness",
+            "iconCount": 33
+        },
+        {
+            "slug": "text-formatting",
+            "label": "Text Formatting",
+            "iconCount": 43
+        },
+        {
+            "slug": "time",
+            "label": "Time",
+            "iconCount": 18
+        },
+        {
+            "slug": "toggle",
+            "label": "Toggle",
+            "iconCount": 16
+        },
+        {
+            "slug": "transportation",
+            "label": "Transportation",
+            "iconCount": 52
+        },
+        {
+            "slug": "travel-hotel",
+            "label": "Travel + Hotel",
+            "iconCount": 75
+        },
+        {
+            "slug": "users-people",
+            "label": "Users + People",
+            "iconCount": 119
+        },
+        {
+            "slug": "weather",
+            "label": "Weather",
+            "iconCount": 37
+        },
+        {
+            "slug": "writing",
+            "label": "Writing",
+            "iconCount": 31
+        },
+        {
+            "slug": "brands",
+            "label": "Brands",
+            "iconCount": 572
+        }
+    ],
+    "iconCount": 2883
+}

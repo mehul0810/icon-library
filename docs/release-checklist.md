@@ -31,6 +31,11 @@
   the official category labels/counts, and category-plus-search filtering.
 - Confirm collection-scoped Core icon requests remain responsive with all
   bundled libraries enabled; repeat a cold and warm request for a large style.
+- On WordPress 7.1+, list the registered `icon-library/*` Abilities and run the
+  read-only catalog abilities with an editor account.
+- With a disposable post, list icon blocks, insert, replace, and remove one
+  block through the Abilities API; verify `edit_post` enforcement and stale-post
+  rejection with `expected_modified_gmt`.
 - Insert a bundled icon and a custom icon in the native Icon block.
 - Change supported block styles, save, reload, and inspect the frontend.
 - Disable Heroicons and verify existing content still renders while new discovery is hidden.

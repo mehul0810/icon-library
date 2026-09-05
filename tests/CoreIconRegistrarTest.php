@@ -6,6 +6,27 @@ use IconLibrary\CoreIconRegistrar;
 use PHPUnit\Framework\TestCase;
 
 class CoreIconRegistrarTest extends TestCase {
+	public function test_metadata_discovery_never_resolves_svg_files() {
+		$GLOBALS['icon_library_test_registered'] = array( 'collections' => array(), 'icons' => array() );
+		$registry = $this->getMockBuilder( CollectionRegistry::class )->disableOriginalConstructor()->onlyMethods( array( 'get_enabled_collection_slugs', 'get_manifest', 'get_enabled_variants', 'get_svg_path', 'get_svg_content' ) )->getMock();
+		$registry->method( 'get_enabled_collection_slugs' )->willReturn( array( 'test' ) );
+		$registry->method( 'get_enabled_variants' )->willReturn( array() );
+		$registry->method( 'get_manifest' )->willReturn( array( 'name' => 'Test', 'icons' => array( array( 'coreIconName' => 'test/one', 'label' => 'One', 'path' => 'one.svg' ) ) ) );
+		$registry->expects( $this->never() )->method( 'get_svg_path' );
+		$registry->expects( $this->never() )->method( 'get_svg_content' );
+		( new CoreIconRegistrar( $registry ) )->register_icons( '', true );
+		$this->assertArrayHasKey( 'test', $GLOBALS['icon_library_test_registered']['collections'] );
+		$this->assertSame( array(), $GLOBALS['icon_library_test_registered']['icons'] );
+	}
+
+	public function test_namespace_discovery_skips_unrelated_manifests() {
+		$registry = $this->getMockBuilder( CollectionRegistry::class )->disableOriginalConstructor()->onlyMethods( array( 'get_enabled_collection_slugs', 'get_manifest', 'get_enabled_variants' ) )->getMock();
+		$registry->method( 'get_enabled_collection_slugs' )->willReturn( array( 'test', 'unrelated' ) );
+		$registry->expects( $this->once() )->method( 'get_manifest' )->with( 'test' )->willReturn( array() );
+		$registry->method( 'get_enabled_variants' )->willReturn( array() );
+		( new CoreIconRegistrar( $registry ) )->register_icons( 'test-solid' );
+	}
+
 	private function style_registrar( $enabled = true ) {
 		$GLOBALS['icon_library_test_registered'] = array(
 			'collections' => array(),

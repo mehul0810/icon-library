@@ -57,6 +57,13 @@ blocks that reference a removed custom icon continue to render, while the icon
 is hidden from new selections. Uninstall removes plugin-owned custom icon files
 and metadata, so icons still require the plugin to remain active.
 
+On WordPress 7.1 and newer, Icon Library also exposes public Abilities API
+actions for AI agents and automation: searching enabled icons, validating icon
+metadata, listing `core/icon` blocks by stable paths, inserting and replacing
+icons, and removing an icon block. Read actions use editor-style access; post
+actions require permission to edit the target post. Inputs never accept raw SVG,
+filesystem paths, arbitrary block markup, or post content.
+
 == Third-party licenses ==
 
 Bundled libraries remain under their upstream terms:
@@ -77,3 +84,4 @@ Bundled libraries remain under their upstream terms:
 * Add strict local custom SVG icon management.
 * Preserve saved icons when bundled libraries are disabled.
 * Add reproducible validation and release packaging.
+* Add permissioned WordPress Abilities API actions for icon discovery and core/icon block editing.

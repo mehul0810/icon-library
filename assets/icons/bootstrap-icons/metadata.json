@@ -1,0 +1,29 @@
+{
+    "schemaVersion": 2,
+    "slug": "bootstrap-icons",
+    "name": "Bootstrap Icons",
+    "description": "Official open source SVG icons for Bootstrap.",
+    "version": "1.13.1",
+    "license": {
+        "name": "MIT",
+        "url": "https://github.com/twbs/icons/blob/main/LICENSE"
+    },
+    "source": {
+        "name": "twbs/icons",
+        "url": "https://github.com/twbs/icons",
+        "revision": "ce0e49dd063243118a115f17ad1fe1fe7576d552"
+    },
+    "variants": [
+        {
+            "slug": "default",
+            "label": "Default",
+            "iconCount": 1404
+        },
+        {
+            "slug": "filled",
+            "label": "Filled",
+            "iconCount": 669
+        }
+    ],
+    "iconCount": 2073
+}

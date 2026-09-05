@@ -30,6 +30,22 @@ class ManifestLoaderTest extends TestCase {
 	}
 
 	/** Persistent cache stores raw data and filters each request independently. */
+	public function test_bundled_metadata_does_not_hydrate_icon_records() {
+		$loader = $this->getMockBuilder( ManifestLoader::class )->setConstructorArgs( array( ICON_LIBRARY_DIR . 'assets/icons' ) )->onlyMethods( array( 'get_manifest' ) )->getMock();
+		$loader->expects( $this->never() )->method( 'get_manifest' );
+		$registry = new IconLibrary\CollectionRegistry( $loader );
+		$this->assertCount( 3, $registry->get_collections() );
+		$this->assertSame( 648, $registry->get_collection( 'heroicons' )['iconCount'] );
+	}
+
+	public function test_manifest_filter_bypasses_generated_metadata() {
+		$GLOBALS['icon_library_test_filters']['icon_library_icon_manifest'] = array(
+			static function ( $manifest ) { $manifest['name'] = 'Filtered'; return $manifest; },
+		);
+		$this->assertSame( 'Filtered', ( new ManifestLoader( ICON_LIBRARY_DIR . 'assets/icons' ) )->get_metadata( 'heroicons' )['name'] );
+	}
+
+	/** Persistent cache stores raw data and filters each request independently. */
 	public function test_filter_result_is_not_shared_through_persistent_cache() {
 		$GLOBALS['icon_library_test_filters']['icon_library_icon_manifest'] = array(
 			static function ( $manifest ) {

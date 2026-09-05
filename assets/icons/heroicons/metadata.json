@@ -1,0 +1,33 @@
+{
+    "schemaVersion": 2,
+    "slug": "heroicons",
+    "name": "Heroicons",
+    "description": "A set of hand-crafted SVG icons from Tailwind Labs.",
+    "version": "2.2.0",
+    "license": {
+        "name": "MIT",
+        "url": "https://github.com/tailwindlabs/heroicons/blob/master/LICENSE"
+    },
+    "source": {
+        "name": "tailwindlabs/heroicons",
+        "url": "https://github.com/tailwindlabs/heroicons",
+        "revision": "0435d4ca364a608cc75e2f8683d374e55abbae26"
+    },
+    "variants": [
+        {
+            "slug": "outline",
+            "label": "Outline",
+            "coreCompatible": false,
+            "defaultEnabled": false,
+            "iconCount": 324
+        },
+        {
+            "slug": "solid",
+            "label": "Solid",
+            "coreCompatible": true,
+            "defaultEnabled": true,
+            "iconCount": 324
+        }
+    ],
+    "iconCount": 648
+}

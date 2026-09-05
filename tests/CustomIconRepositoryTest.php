@@ -35,6 +35,15 @@ class CustomIconRepositoryTest extends TestCase {
 		$this->assertNull( $this->repository->get_file_path( 'unsafe.svg' ) );
 	}
 
+	public function test_manifest_cache_reflects_label_and_archive_changes() {
+		$this->repository->create( 'cached', 'Before', '<svg><path d="M0 0h1v1z"/></svg>' );
+		$this->assertSame( 'Before', $this->repository->get_manifest()['icons'][0]['label'] );
+		$this->repository->update_label( 'cached', 'After' );
+		$this->assertSame( 'After', $this->repository->get_manifest()['icons'][0]['label'] );
+		$this->repository->delete( 'cached' );
+		$this->assertTrue( $this->repository->get_manifest()['icons'][0]['archived'] );
+	}
+
 	public function test_delete_archives_icon_without_removing_saved_block_source() {
 		$this->repository->create( 'retained', 'Retained', '<svg><path d="M0 0h1v1z"/></svg>' );
 		$path = $this->repository->get_file_path( 'retained.svg' );

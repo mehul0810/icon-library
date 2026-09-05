@@ -294,7 +294,8 @@ body.js .icon-library-admin.is-loading > * {
 	font-size: 12px;
 }
 
-.icon-library-pagination .page-numbers {
+.icon-library-pagination .page-numbers,
+.icon-library-custom-pagination .page-numbers {
 	display: flex;
 	align-items: center;
 	gap: 4px;
@@ -304,7 +305,9 @@ body.js .icon-library-admin.is-loading > * {
 }
 
 .icon-library-pagination a,
-.icon-library-pagination .current {
+.icon-library-pagination .current,
+.icon-library-custom-pagination a,
+.icon-library-custom-pagination .current {
 	display: inline-flex;
 	min-width: 32px;
 	height: 32px;
@@ -317,7 +320,8 @@ body.js .icon-library-admin.is-loading > * {
 	text-decoration: none;
 }
 
-.icon-library-pagination .current {
+.icon-library-pagination .current,
+.icon-library-custom-pagination .current {
 	border-color: #3858e9;
 	background: #3858e9;
 	color: #fff;
@@ -329,6 +333,15 @@ body.js .icon-library-admin.is-loading > * {
 	gap: 8px;
 	min-height: 142px;
 	padding: 12px;
+}
+
+#icon-library-icon-grid .icon-library-icon {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 168px;
+}
+
+.icon-library-custom-pagination {
+	margin-block: 24px;
 }
 
 .icon-library-icon-preview {

@@ -49,11 +49,25 @@ class CollectionRegistry {
 	private $collection_summaries = array();
 
 	/**
-	 * Request-local filtered icon cache.
+	 * Bounded request-local page cache. Never stores a complete matching catalog.
 	 *
 	 * @var array<string,array[]>
 	 */
 	private $filtered_icon_cache = array();
+
+	/**
+	 * Request-local provider manifests.
+	 *
+	 * @var array
+	 */
+	private $provider_manifests = array();
+
+	/**
+	 * Request-local icon name indexes.
+	 *
+	 * @var array
+	 */
+	private $name_indexes = array();
 
 	/**
 	 * Constructor.
@@ -64,6 +78,20 @@ class CollectionRegistry {
 	public function __construct( ManifestLoader $manifest_loader, ?CustomIconRepository $custom_icons = null ) {
 		$this->manifest_loader = $manifest_loader;
 		$this->custom_icons    = $custom_icons;
+		foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $hook ) {
+			add_action( $hook, array( $this, 'invalidate_option' ) );
+		}
+	}
+
+	/**
+	 * Invalidates derived data after a library or custom-icon mutation.
+	 *
+	 * @param string $option Changed option name.
+	 */
+	public function invalidate_option( $option ) {
+		if ( in_array( $option, array( Plugin::OPTION_ENABLED_COLLECTIONS, Plugin::OPTION_ENABLED_VARIANTS, CustomIconRepository::OPTION_ICONS ), true ) ) {
+			$this->clear_request_caches();
+		}
 	}
 
 	/**
@@ -76,7 +104,7 @@ class CollectionRegistry {
 		$enabled     = $this->get_enabled_collection_slugs();
 
 		foreach ( $this->get_available_collection_slugs() as $slug ) {
-			$manifest = $this->get_manifest( $slug );
+			$manifest = $this->get_metadata( $slug );
 
 			if ( ! is_array( $manifest ) ) {
 				continue;
@@ -105,7 +133,7 @@ class CollectionRegistry {
 	 */
 	public function get_collection( $slug ) {
 		$slug     = is_string( $slug ) ? sanitize_key( $slug ) : '';
-		$manifest = $this->get_manifest( $slug );
+		$manifest = $this->get_metadata( $slug );
 		if ( ! is_array( $manifest ) ) {
 			return null;
 		}
@@ -154,14 +182,34 @@ class CollectionRegistry {
 		}
 		$providers = $this->get_provider_definitions();
 		if ( isset( $providers[ $slug ] ) && is_array( $providers[ $slug ] ) && isset( $providers[ $slug ]['manifest'] ) ) {
+			if ( array_key_exists( $slug, $this->provider_manifests ) ) {
+				return $this->provider_manifests[ $slug ];
+			}
 			$manifest      = is_callable( $providers[ $slug ]['manifest'] ) ? call_user_func( $providers[ $slug ]['manifest'] ) : $providers[ $slug ]['manifest'];
 			$manifest_slug = is_array( $manifest ) && is_string( $manifest['slug'] ?? null ) ? sanitize_key( $manifest['slug'] ) : '';
 			if ( ! is_array( $manifest ) || 0 !== strcmp( $slug, $manifest_slug ) ) {
+				$this->provider_manifests[ $slug ] = null;
 				return null;
 			}
-			return apply_filters( 'icon_library_icon_manifest', $manifest, $slug, '' );
+			$manifest                          = apply_filters( 'icon_library_icon_manifest', $manifest, $slug, '' );
+			$this->provider_manifests[ $slug ] = is_array( $manifest ) && ( $manifest['slug'] ?? null ) === $slug ? $manifest : null;
+			return $this->provider_manifests[ $slug ];
 		}
 		return $this->manifest_loader->get_manifest( $slug );
+	}
+
+	/**
+	 * Reads lightweight bundled metadata, preserving dynamic collection providers.
+	 *
+	 * @param string $slug Library slug.
+	 * @return array|null
+	 */
+	private function get_metadata( $slug ) {
+		$providers = $this->get_provider_definitions();
+		if ( CustomIconRepository::COLLECTION_SLUG === $slug || isset( $providers[ $slug ] ) ) {
+			return $this->get_manifest( $slug );
+		}
+		return $this->manifest_loader->get_metadata( $slug );
 	}
 
 	/**
@@ -303,7 +351,7 @@ class CollectionRegistry {
 	 */
 	public function get_enabled_variants( $slug ) {
 		$slug     = is_string( $slug ) ? sanitize_key( $slug ) : '';
-		$manifest = $this->get_manifest( $slug );
+		$manifest = $this->get_metadata( $slug );
 		if ( ! is_array( $manifest ) || empty( $manifest['variants'] ) || ! is_array( $manifest['variants'] ) ) {
 			return array();
 		}
@@ -440,37 +488,43 @@ class CollectionRegistry {
 	 * @return array{items:array,total:int,variant_counts:array}
 	 */
 	public function query_icons( $args = array() ) {
-		$args                  = $this->prepare_icon_query_args( $args );
+		$args      = $this->prepare_icon_query_args( $args );
+		$cache_key = serialize( $args );
+		if ( isset( $this->filtered_icon_cache[ $cache_key ] ) ) {
+			return $this->filtered_icon_cache[ $cache_key ];
+		}
 		$variant               = $args['variant'];
 		$facet_args            = $args;
 		$facet_args['variant'] = '';
 		$matching              = $this->get_filtered_icons( $facet_args );
 		$counts                = array();
+		$items                 = array();
+		$total                 = 0;
+		$offset                = ( $args['page'] - 1 ) * $args['per_page'];
 
 		foreach ( $matching as $icon ) {
 			$icon_variant = isset( $icon['variant'] ) && is_string( $icon['variant'] ) ? sanitize_key( $icon['variant'] ) : '';
 			if ( $icon_variant ) {
 				$counts[ $icon_variant ] = ( $counts[ $icon_variant ] ?? 0 ) + 1;
 			}
+			if ( $variant && $icon_variant !== $variant ) {
+				continue;
+			}
+			if ( $total >= $offset && count( $items ) < $args['per_page'] ) {
+				$items[] = $icon;
+			}
+			++$total;
 		}
 
-		if ( $variant ) {
-			$matching = array_values(
-				array_filter(
-					$matching,
-					static function ( $icon ) use ( $variant ) {
-						return isset( $icon['variant'] ) && is_string( $icon['variant'] ) && sanitize_key( $icon['variant'] ) === $variant;
-					}
-				)
-			);
+		if ( count( $this->filtered_icon_cache ) >= 4 ) {
+			array_shift( $this->filtered_icon_cache );
 		}
-
-		$offset = ( $args['page'] - 1 ) * $args['per_page'];
-		return array(
-			'items'          => array_slice( $matching, $offset, $args['per_page'] ),
-			'total'          => count( $matching ),
+		$this->filtered_icon_cache[ $cache_key ] = array(
+			'items'          => $items,
+			'total'          => $total,
 			'variant_counts' => $counts,
 		);
+		return $this->filtered_icon_cache[ $cache_key ];
 	}
 
 	/**
@@ -562,21 +616,19 @@ class CollectionRegistry {
 	 * Returns all icons matching normalized query arguments.
 	 *
 	 * @param array $args Normalized query args.
-	 * @return array[]
+	 * @return \Generator
 	 */
 	private function get_filtered_icons( $args ) {
-		$cache_key = serialize( $args );
-		if ( isset( $this->filtered_icon_cache[ $cache_key ] ) ) {
-			return $this->filtered_icon_cache[ $cache_key ];
-		}
-
 		$collection_filter = $args['collection'];
 		$variant_filter    = $args['variant'];
 		$category_filter   = $args['category'];
 		$search            = $args['search'];
 		$enabled_slugs     = $this->get_enabled_collection_slugs();
-		$icons             = array();
 
+		if ( true === $args['enabled'] && ( empty( $enabled_slugs ) || ( $collection_filter && ! in_array( $collection_filter, $enabled_slugs, true ) ) ) ) {
+			return;
+		}
+		// Preserve the complete-map filter contract; bundled summaries contain no icon records.
 		$collections = $collection_filter ? array_filter( array( $collection_filter => $this->get_collection( $collection_filter ) ) ) : $this->get_collections();
 		foreach ( $collections as $collection_slug => $collection ) {
 			if ( ! is_string( $collection_slug ) || ! is_array( $collection ) || ! isset( $collection['name'], $collection['enabled'] ) || ! is_string( $collection['name'] ) || ! is_bool( $collection['enabled'] ) ) {
@@ -594,7 +646,8 @@ class CollectionRegistry {
 				continue;
 			}
 
-			$manifest = $this->get_manifest( $collection_slug );
+			$manifest         = $this->get_manifest( $collection_slug );
+			$enabled_variants = true === $args['enabled'] ? $this->get_enabled_variants( $collection_slug ) : array();
 
 			if ( empty( $manifest['icons'] ) || ! is_array( $manifest['icons'] ) ) {
 				continue;
@@ -609,6 +662,9 @@ class CollectionRegistry {
 				}
 
 				$icon_variant = is_string( $icon['variant'] ?? null ) ? sanitize_key( $icon['variant'] ) : '';
+				if ( true === $args['enabled'] && $icon_variant && ! in_array( $icon_variant, $enabled_variants, true ) ) {
+					continue;
+				}
 				if ( $variant_filter && $icon_variant !== $variant_filter ) {
 					continue;
 				}
@@ -622,7 +678,7 @@ class CollectionRegistry {
 					continue;
 				}
 
-				$icons[] = array_merge(
+				yield array_merge(
 					$icon,
 					array(
 						'collection'        => $collection_slug,
@@ -632,9 +688,6 @@ class CollectionRegistry {
 				);
 			}
 		}
-
-		$this->filtered_icon_cache[ $cache_key ] = $icons;
-		return $icons;
 	}
 
 	/**
@@ -669,6 +722,66 @@ class CollectionRegistry {
 				if ( is_array( $icon ) && isset( $icon['coreIconName'] ) && is_string( $icon['coreIconName'] ) && $core_icon_name === $icon['coreIconName'] ) {
 					return $collection_slug;
 				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Finds one icon by its Core registry name.
+	 *
+	 * This lookup is intentionally manifest-backed so callers can validate an
+	 * icon before the lazy Core registrar has been invoked. Disabled collections
+	 * and variants are excluded by default because the result is intended for
+	 * new content mutations.
+	 *
+	 * @param string $core_icon_name Core icon registry name.
+	 * @param bool   $enabled_only  Whether to require an enabled collection and variant.
+	 * @return array|null
+	 */
+	public function get_icon_by_core_name( $core_icon_name, $enabled_only = true ) {
+		if ( ! is_string( $core_icon_name ) || 1 !== preg_match( '/^[a-z0-9-]+\/[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/', $core_icon_name ) ) {
+			return null;
+		}
+
+		$enabled_collections = $enabled_only ? $this->get_enabled_collection_slugs() : array();
+		$namespace           = strtok( $core_icon_name, '/' );
+		foreach ( $this->get_available_collection_slugs() as $collection_slug ) {
+			if ( ! is_string( $collection_slug ) || ( $enabled_only && ! in_array( $collection_slug, $enabled_collections, true ) ) ) {
+				continue;
+			}
+			if ( $namespace !== $collection_slug && 0 !== strpos( $namespace, $collection_slug . '-' ) ) {
+				continue;
+			}
+
+			if ( ! isset( $this->name_indexes[ $collection_slug ] ) ) {
+				$this->name_indexes[ $collection_slug ] = IconNameIndex::build( $collection_slug, $this->get_manifest( $collection_slug ) );
+			}
+			$entry = $this->name_indexes[ $collection_slug ][ $core_icon_name ] ?? null;
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+
+			$enabled_variants = $enabled_only ? $this->get_enabled_variants( $collection_slug ) : array();
+			foreach ( array( $entry['icon'] ) as $icon ) {
+				if ( ! is_array( $icon ) || ( $enabled_only && ( ! empty( $icon['archived'] ) || ! empty( $entry['legacy'] ) ) ) ) {
+					continue;
+				}
+
+				$variant = isset( $icon['variant'] ) && is_string( $icon['variant'] ) ? sanitize_key( $icon['variant'] ) : '';
+				if ( $enabled_only && $variant && ! in_array( $variant, $enabled_variants, true ) ) {
+					continue;
+				}
+
+				return array_merge(
+					$icon,
+					array(
+						'collection'        => $collection_slug,
+						'collectionEnabled' => in_array( $collection_slug, $this->get_enabled_collection_slugs(), true ),
+						'coreIconName'      => $core_icon_name,
+					)
+				);
 			}
 		}
 
@@ -737,9 +850,11 @@ class CollectionRegistry {
 	}
 
 	/** Clears request-local derived data after a state mutation. */
-	private function clear_request_caches() {
+	public function clear_request_caches() {
 		$this->collection_summaries = array();
 		$this->filtered_icon_cache  = array();
+		$this->provider_manifests   = array();
+		$this->name_indexes         = array();
 	}
 
 	/**
@@ -821,7 +936,14 @@ class CollectionRegistry {
 				$variant_counts[ $variant_slug ] = ( $variant_counts[ $variant_slug ] ?? 0 ) + 1;
 			}
 		}
-		$variants         = isset( $manifest['variants'] ) && is_array( $manifest['variants'] ) ? array_values( array_filter( $manifest['variants'], 'is_array' ) ) : array();
+		$variants = isset( $manifest['variants'] ) && is_array( $manifest['variants'] ) ? array_values( array_filter( $manifest['variants'], 'is_array' ) ) : array();
+		if ( ! isset( $manifest['icons'] ) ) {
+			foreach ( $variants as $variant ) {
+				if ( is_string( $variant['slug'] ?? null ) ) {
+					$variant_counts[ sanitize_key( $variant['slug'] ) ] = absint( $variant['iconCount'] ?? 0 );
+				}
+			}
+		}
 		$enabled_variants = $this->get_enabled_variants( is_string( $manifest['slug'] ?? null ) ? $manifest['slug'] : '' );
 		$variants         = array_map(
 			static function ( $variant ) use ( $enabled_variants, $variant_counts ) {
@@ -842,7 +964,7 @@ class CollectionRegistry {
 			'source'      => $manifest['source'] ?? array(),
 			'variants'    => $variants,
 			'categories'  => isset( $manifest['categories'] ) && is_array( $manifest['categories'] ) ? $manifest['categories'] : array(),
-			'iconCount'   => count( $icons ),
+			'iconCount'   => isset( $manifest['icons'] ) ? count( $icons ) : absint( $manifest['iconCount'] ?? 0 ),
 			'enabled'     => (bool) $enabled,
 		);
 	}

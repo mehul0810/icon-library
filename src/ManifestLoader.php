@@ -30,6 +30,40 @@ class ManifestLoader {
 	private $manifests = array();
 
 	/**
+	 * Request-local lightweight metadata.
+	 *
+	 * @var array
+	 */
+	private $metadata = array();
+
+	/**
+	 * Reads generated metadata unless runtime filters require the full manifest.
+	 *
+	 * @param string $slug Collection slug.
+	 * @return array|null
+	 */
+	public function get_metadata( $slug ) {
+		if ( ! is_string( $slug ) || ! $this->is_valid_slug( $slug ) ) {
+			return null;
+		}
+		if ( function_exists( 'has_filter' ) && has_filter( 'icon_library_icon_manifest' ) ) {
+			return $this->get_manifest( $slug );
+		}
+		if ( isset( $this->metadata[ $slug ] ) ) {
+			return $this->metadata[ $slug ];
+		}
+		$path = $this->base_dir . $slug . '/metadata.json';
+		if ( is_readable( $path ) ) {
+			$data = json_decode( file_get_contents( $path ), true );
+			if ( is_array( $data ) && ( $data['slug'] ?? null ) === $slug && isset( $data['iconCount'], $data['variants'] ) ) {
+				$this->metadata[ $slug ] = $data;
+				return $data;
+			}
+		}
+		return $this->get_manifest( $slug );
+	}
+
+	/**
 	 * In-request resolved collection directories.
 	 *
 	 * @var array<string,string|null>
@@ -113,7 +147,7 @@ class ManifestLoader {
 
 		// Include the package version so deterministic build timestamps cannot
 		// preserve an older manifest in a persistent object cache after upgrade.
-		$cache_key = 'manifest_' . $slug . '_' . ( defined( 'ICON_LIBRARY_VERSION' ) ? ICON_LIBRARY_VERSION : 'dev' );
+		$cache_key = 'manifest_' . md5( $this->base_dir ) . '_' . $slug . '_' . ( defined( 'ICON_LIBRARY_VERSION' ) ? ICON_LIBRARY_VERSION : 'dev' );
 		$modified  = (int) filemtime( $path );
 		$cached    = wp_cache_get( $cache_key, 'icon_library' );
 		$manifest  = is_array( $cached ) && isset( $cached['modified'], $cached['manifest'] ) && $modified === $cached['modified'] ? $cached['manifest'] : false;

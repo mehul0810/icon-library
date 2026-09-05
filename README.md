@@ -39,6 +39,7 @@ The following filters are available for integrations:
 - `icon_library_enabled_variants`: enabled variants for one collection.
 - `icon_library_icon_manifest`: a loaded manifest, its slug, and source path.
 - `icon_library_svg_markup`: final SVG markup, re-escaped through the plugin allowlist.
+- `icon_library_abilities`: ability definitions before registration, for integrations that need to hide or extend an AI-facing action.
 
 ## Manifest Shape
 
@@ -93,6 +94,33 @@ Library mutations require `manage_options`. Read endpoints require the same
 editor-style access as the Core icon endpoint. Icon discovery and rendering use
 the native WordPress `wp/v2/icons` endpoints.
 
+## Abilities API
+
+On WordPress 7.1 and newer, Icon Library registers public WordPress Abilities
+for AI agents and other automation clients. The abilities are discoverable
+through the core Abilities API and can also be used with `wp ability list` and
+`wp ability run`:
+
+- `icon-library/search-icons`: search enabled libraries and return safe icon metadata.
+- `icon-library/get-icon`: validate one enabled icon name and return its metadata.
+- `icon-library/list-icon-blocks`: list editable post `core/icon` blocks with stable block-tree paths and a `modified_gmt` token for stale-write protection.
+- `icon-library/insert-icon-block`: insert a `core/icon` block at the root or inside a container.
+- `icon-library/replace-icon-block`: assign a different icon and selected accessible presentation attributes to an existing block.
+- `icon-library/remove-icon-block`: remove one `core/icon` block by path.
+
+Read abilities require editor-style icon access. Post discovery and all content
+mutations require the caller to have `edit_post` capability for the target
+post. Mutation inputs accept an optional `expected_modified_gmt` value (returned
+by `list-icon-blocks`) to detect changes completed before an operation starts.
+This timestamp check is not an atomic write guard: concurrent editor or agent
+writes can still race. Do not run concurrent mutations against the same post.
+Nested edits preserve WordPress's child placeholders. Insertion into an empty
+container is supported only when its HTML insertion point is unambiguous;
+unsupported containers are rejected without saving changes.
+Only registered icon names and a small allowlist of presentation attributes are
+accepted; raw SVG, filesystem paths, arbitrary block markup, and post content
+are never accepted or returned.
+
 ## Icon Lifecycle
 
 Disabling a library hides it from Core collection and icon-list discovery,
@@ -136,12 +164,26 @@ php scripts/validate-manifests.php
 
 ## Development
 
-Install the development tools with `composer install`, then run:
+Install the development tools with `composer install`. Tests use WordPress's
+real block parser and serializer. Set `WP_CORE_DIR` to a WordPress checkout when
+the plugin is not inside a site's `wp-content/plugins` directory. Node.js 20+
+is required for the dependency-free admin navigation tests.
 
 ```bash
 composer check
+node --test tests/*.test.js
 composer package
 ```
+
+After importing or changing bundled manifests, run `composer catalog` to
+regenerate compact `metadata.json` files. `composer check` rejects stale metadata.
+Runtime manifest filters bypass these summaries to preserve filtered catalogs.
+Provider callbacks are cached within a request; providers that change during
+that request must call `CollectionRegistry::clear_request_caches()`. Stored
+library/variant/custom-icon option changes invalidate derived registry caches.
+
+See `docs/remediation-status.md` for the review fixes, measured scope, and
+remaining concurrency and browser-proof work.
 
 `composer package` creates `build/icon-library.1.0.0.zip` from an explicit
 production allowlist. SVG files referenced by validated library manifests

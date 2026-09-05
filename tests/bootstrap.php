@@ -17,6 +17,10 @@ $GLOBALS['icon_library_test_registered']   = array(
 $GLOBALS['icon_library_test_cache']        = array();
 $GLOBALS['icon_library_test_filters']      = array();
 $GLOBALS['icon_library_test_upload_dir']   = sys_get_temp_dir() . '/icon-library-tests-' . getmypid();
+$GLOBALS['icon_library_test_actions']      = array();
+$GLOBALS['icon_library_test_abilities']    = array();
+$GLOBALS['icon_library_test_categories']   = array();
+$GLOBALS['icon_library_test_posts']       = array();
 
 class WP_REST_Request extends ArrayObject {
 	private $method;
@@ -124,6 +128,28 @@ function apply_filters( $hook, $value, ...$args ) {
 	return $value;
 }
 
+function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
+	$GLOBALS['icon_library_test_actions'][ $hook ][] = array( $callback, $priority, $accepted_args );
+}
+
+function wp_register_ability_category( $slug, $args ) {
+	$GLOBALS['icon_library_test_categories'][ $slug ] = $args;
+	return true;
+}
+
+function wp_has_ability_category( $slug ) {
+	return isset( $GLOBALS['icon_library_test_categories'][ $slug ] );
+}
+
+function wp_register_ability( $name, $args ) {
+	$GLOBALS['icon_library_test_abilities'][ $name ] = $args;
+	return true;
+}
+
+function wp_has_ability( $name ) {
+	return isset( $GLOBALS['icon_library_test_abilities'][ $name ] );
+}
+
 function wp_cache_get( $key, $group = '' ) {
 	$cache_key = $group . ':' . $key;
 	return array_key_exists( $cache_key, $GLOBALS['icon_library_test_cache'] ) ? $GLOBALS['icon_library_test_cache'][ $cache_key ] : false;
@@ -208,12 +234,49 @@ function wp_delete_file( $file ) {
 	return file_exists( $file ) ? unlink( $file ) : true;
 }
 
-function current_user_can( $capability ) {
-	return ! empty( $GLOBALS['icon_library_test_capabilities'][ $capability ] );
+function get_post( $post_id = null ) {
+	$post_id = (int) $post_id;
+	return isset( $GLOBALS['icon_library_test_posts'][ $post_id ] ) ? $GLOBALS['icon_library_test_posts'][ $post_id ] : null;
 }
 
-function get_post_types() {
+function wp_update_post( $postarr, $wp_error = false ) {
+	unset( $wp_error );
+	$post_id = isset( $postarr['ID'] ) ? (int) $postarr['ID'] : 0;
+	if ( ! $post_id || ! isset( $GLOBALS['icon_library_test_posts'][ $post_id ] ) ) {
+		return 0;
+	}
+	if ( isset( $postarr['post_content'] ) ) {
+		$GLOBALS['icon_library_test_posts'][ $post_id ]->post_content = $postarr['post_content'];
+	}
+	return $post_id;
+}
+
+$core_dir = getenv( 'WP_CORE_DIR' ) ?: dirname( __DIR__, 4 );
+if ( ! is_file( $core_dir . '/wp-includes/blocks.php' ) ) {
+	throw new RuntimeException( 'Set WP_CORE_DIR to a WordPress checkout to run real block serialization tests.' );
+}
+require_once $core_dir . '/wp-includes/class-wp-block-parser.php';
+require_once $core_dir . '/wp-includes/blocks.php';
+
+function wp_json_encode( $value, $flags = 0, $depth = 512 ) {
+	return json_encode( $value, $flags, $depth );
+}
+
+function has_filter( $hook ) {
+	return ! empty( $GLOBALS['icon_library_test_filters'][ $hook ] );
+}
+
+function wp_slash( $value ) {
+	return $value;
+}
+
+function get_post_types( $args = array(), $output = 'names' ) {
+	unset( $args, $output );
 	return array();
+}
+
+function current_user_can( $capability ) {
+	return ! empty( $GLOBALS['icon_library_test_capabilities'][ $capability ] );
 }
 
 function rest_authorization_required_code() {

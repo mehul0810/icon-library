@@ -39,6 +39,20 @@ class CustomIconRepository {
 	private $lock_token = '';
 
 	/**
+	 * Metadata used to build the cached manifest.
+	 *
+	 * @var array|null
+	 */
+	private $manifest_icons;
+
+	/**
+	 * Request-local manifest, refreshed when stored metadata changes.
+	 *
+	 * @var array|null
+	 */
+	private $manifest;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param SvgSanitizer $sanitizer SVG sanitizer.
@@ -64,11 +78,16 @@ class CustomIconRepository {
 	 */
 	public function get_manifest() {
 		$icons = $this->get_icons();
+		if ( $icons === $this->manifest_icons ) {
+			return $this->manifest;
+		}
+		$this->manifest_icons = $icons;
 		if ( empty( $icons ) ) {
+			$this->manifest = null;
 			return null;
 		}
 
-		return array(
+		$this->manifest = array(
 			'schemaVersion' => 2,
 			'slug'          => self::COLLECTION_SLUG,
 			'name'          => __( 'Custom Icons', 'icon-library' ),
@@ -90,6 +109,7 @@ class CustomIconRepository {
 			),
 			'icons'         => array_values( $icons ),
 		);
+		return $this->manifest;
 	}
 
 	/**

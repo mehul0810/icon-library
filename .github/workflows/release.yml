@@ -67,8 +67,16 @@ jobs:
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$current_commit" >> "$GITHUB_OUTPUT"
 
+      - name: Install block parser test dependency
+        run: |
+          curl --fail --silent --show-error --location https://wordpress.org/wordpress-6.8.tar.gz -o /tmp/wordpress.tar.gz
+          tar -xzf /tmp/wordpress.tar.gz -C /tmp
+          echo "WP_CORE_DIR=/tmp/wordpress" >> "$GITHUB_ENV"
+
       - name: Run project checks
         run: composer check
+      - name: Test admin navigation
+        run: node --test tests/*.test.js
 
       - name: Build production ZIP
         run: composer package

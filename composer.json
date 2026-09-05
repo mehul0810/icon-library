@@ -25,6 +25,8 @@
     "scripts": {
         "lint": "@php scripts/lint.php",
         "manifests": "@php scripts/validate-manifests.php",
+        "catalog": "@php scripts/build-catalog-metadata.php",
+        "catalog:check": "@php scripts/build-catalog-metadata.php --check",
         "test": "phpunit",
         "cs": "phpcs",
         "package": "@php scripts/package-release.php",
@@ -32,6 +34,7 @@
         "check": [
             "@lint",
             "@manifests",
+            "@catalog:check",
             "@test",
             "@cs"
         ]

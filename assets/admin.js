@@ -1,6 +1,8 @@
 ( function ( apiFetch, config ) {
 	'use strict';
 	var pendingFocusKey = 'iconLibraryPendingFocus';
+	var navigationId = 0;
+	var navigationController = null;
 
 	window.requestAnimationFrame( function () {
 		var admin = document.querySelector( '.icon-library-admin' );
@@ -20,7 +22,7 @@
 			return;
 		}
 
-		link = event.target.closest( '.icon-library-tab, .icon-library-collection-row, .icon-library-back, .icon-library-empty-state a' );
+		link = event.target.closest( '.icon-library-tab, .icon-library-collection-row, .icon-library-back, .icon-library-empty-state a, .icon-library-custom-pagination a' );
 
 		if ( ! link || link.target || link.hasAttribute( 'download' ) ) {
 			return;
@@ -45,7 +47,9 @@
 		var wrapper;
 		var grid;
 		var status;
-		var strings;
+			var strings;
+			var requestUrl;
+			var requestedNavigation = navigationId;
 
 		if ( ! button || button.disabled ) {
 			return;
@@ -60,7 +64,7 @@
 			return;
 		}
 
-		if ( ! window.fetch || ! window.DOMParser ) {
+			if ( ! window.fetch || ! window.DOMParser || ! config || ! config.previewUrl ) {
 			window.location.assign( button.dataset.url );
 			return;
 		}
@@ -72,19 +76,33 @@
 			status.textContent = strings.loadingMore || 'Loading more icons...';
 		}
 
-		window.fetch( button.dataset.url, {
-			credentials: 'same-origin',
-			headers: { Accept: 'text/html' },
+			requestUrl = new URL( config.previewUrl, window.location.href );
+			new URL( button.dataset.url, window.location.href ).searchParams.forEach( function ( value, key ) {
+				if ( [ 'collection', 'variant', 'category', 'search', 'icon-page' ].indexOf( key ) !== -1 ) {
+					requestUrl.searchParams.set( key, value );
+				}
+			} );
+			requestUrl.searchParams.set( 'action', 'icon_library_preview_page' );
+			requestUrl.searchParams.set( '_ajax_nonce', config.previewNonce );
+			window.fetch( requestUrl.toString(), {
+				credentials: 'same-origin',
+				headers: { Accept: 'application/json' },
 		} ).then( function ( response ) {
 			if ( ! response.ok ) {
 				throw new Error( 'Load more request failed.' );
 			}
 
-			return response.text();
-		} ).then( function ( html ) {
-			var page = new window.DOMParser().parseFromString( html, 'text/html' );
+				return response.json();
+			} ).then( function ( response ) {
+				if ( requestedNavigation !== navigationId || ! grid.isConnected ) {
+					return;
+				}
+				if ( ! response.success || ! response.data || typeof response.data.html !== 'string' ) {
+					throw new Error( 'Load more response was incomplete.' );
+				}
+				var data = response.data;
+				var page = new window.DOMParser().parseFromString( data.html, 'text/html' );
 			var nextGrid = page.getElementById( button.dataset.grid );
-			var nextButton;
 			var added;
 			var loaded;
 			var total;
@@ -100,14 +118,14 @@
 			}
 
 			loaded = grid.children.length;
-			total  = parseInt( wrapper.dataset.total, 10 ) || loaded;
+				total  = data.total;
 			wrapper.dataset.loaded = loaded;
-			nextButton = page.querySelector( '.icon-library-load-more-button' );
 
-			if ( nextButton && added ) {
-				button.dataset.url         = nextButton.dataset.url;
-				button.dataset.page        = nextButton.dataset.page;
-				button.dataset.totalPages  = nextButton.dataset.totalPages;
+				if ( data.has_more && added ) {
+					var nextUrl = new URL( button.dataset.url, window.location.href );
+					nextUrl.searchParams.set( 'icon-page', data.page + 1 );
+					button.dataset.url         = nextUrl.toString();
+					button.dataset.page        = data.page;
 				button.disabled             = false;
 				button.removeAttribute( 'aria-busy' );
 			} else {
@@ -182,7 +200,7 @@
 		var purgeButton = event.target.closest( '.icon-library-custom-purge' );
 		var card = event.target.closest( '.icon-library-custom-icon' );
 
-		if ( ! card || ( ! saveButton && ! deleteButton && ! restoreButton && ! purgeButton ) ) {
+		if ( ! card || card.getAttribute( 'aria-busy' ) === 'true' || ( ! saveButton && ! deleteButton && ! restoreButton && ! purgeButton ) ) {
 			return;
 		}
 
@@ -299,28 +317,36 @@
 		return '.icon-library-custom-icon[data-name="' + escaped + '"]';
 	}
 
-	function navigateTo( url, addToHistory, moveFocus ) {
+		function navigateTo( url, addToHistory, moveFocus ) {
 		var admin = document.querySelector( '.icon-library-admin' );
-		var focusSelector = moveFocus ? ( 'string' === typeof moveFocus ? moveFocus : '.icon-library-panel h2, .icon-library-empty-state p' ) : '';
+			var focusSelector = moveFocus ? ( 'string' === typeof moveFocus ? moveFocus : '.icon-library-panel h2, .icon-library-empty-state p' ) : '';
+			var requestId = ++navigationId;
+			if ( navigationController ) {
+				navigationController.abort();
+			}
+			navigationController = window.AbortController ? new window.AbortController() : null;
 
 		if ( focusSelector ) {
 			storePendingFocus( focusSelector );
 		}
 
-		if ( ! admin || admin.classList.contains( 'is-navigating' ) ) {
+			if ( ! admin ) {
 			return;
 		}
 
 		admin.classList.add( 'is-navigating' );
 		admin.setAttribute( 'aria-busy', 'true' );
 
-		window.fetch( url, { credentials: 'same-origin' } ).then( function ( response ) {
+			window.fetch( url, { credentials: 'same-origin', signal: navigationController ? navigationController.signal : undefined } ).then( function ( response ) {
 			if ( ! response.ok ) {
 				throw new Error( 'Navigation request failed.' );
 			}
 
 			return response.text();
-		} ).then( function ( html ) {
+			} ).then( function ( html ) {
+				if ( requestId !== navigationId ) {
+					return;
+				}
 			var page = new window.DOMParser().parseFromString( html, 'text/html' );
 			var nextAdmin = page.querySelector( '.icon-library-admin' );
 
@@ -339,14 +365,19 @@
 				window.history.pushState( {}, '', url );
 			}
 
-			window.requestAnimationFrame( function () {
+				window.requestAnimationFrame( function () {
+					if ( requestId !== navigationId ) {
+						return;
+					}
 				admin.classList.remove( 'is-navigating' );
 				admin.removeAttribute( 'aria-busy' );
 
 				focusPendingTarget( admin );
 			} );
-		} ).catch( function () {
-			window.location.assign( url );
+			} ).catch( function ( error ) {
+				if ( requestId === navigationId && error.name !== 'AbortError' ) {
+					window.location.assign( url );
+				}
 		} );
 	}
 

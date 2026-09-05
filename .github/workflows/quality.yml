@@ -33,7 +33,13 @@ jobs:
           test -n "$version"
           echo "value=$version" >> "$GITHUB_OUTPUT"
       - run: composer install --no-interaction --prefer-dist
+      - name: Install block parser test dependency
+        run: |
+          curl --fail --silent --show-error --location https://wordpress.org/wordpress-6.8.tar.gz -o /tmp/wordpress.tar.gz
+          tar -xzf /tmp/wordpress.tar.gz -C /tmp
+          echo "WP_CORE_DIR=/tmp/wordpress" >> "$GITHUB_ENV"
       - run: composer check
+      - run: node --test tests/*.test.js
       - if: matrix.php == '8.4'
         run: composer package
       - if: matrix.php == '8.4'

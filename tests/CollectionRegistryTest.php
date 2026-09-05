@@ -93,6 +93,47 @@ class CollectionRegistryTest extends TestCase {
 	}
 
 	/** Missing state enables only variants marked as defaults. */
+	public function test_enabled_search_excludes_disabled_variants_but_preview_keeps_them() {
+		$registry = $this->registry();
+		$this->assertSame( 2, $registry->query_icons( array( 'enabled' => true ) )['total'] );
+		$this->assertSame( 3, $registry->query_icons()['total'] );
+		$this->assertNull( $registry->get_icon_by_core_name( 'test-outline/three-outline' ) );
+		$this->assertSame( 'test-solid/one-solid', $registry->get_icon_by_core_name( 'test-solid/one-solid' )['coreIconName'] );
+	}
+
+	public function test_page_cache_retains_only_small_pages_and_is_bounded() {
+		$registry = $this->registry();
+		for ( $page = 1; $page <= 6; ++$page ) {
+			$result = $registry->query_icons( array( 'page' => $page, 'per_page' => 1 ) );
+			$this->assertLessThanOrEqual( 1, count( $result['items'] ) );
+			$this->assertSame( 3, $result['total'] );
+		}
+		$cache = new ReflectionProperty( CollectionRegistry::class, 'filtered_icon_cache' );
+		$cache->setAccessible( true );
+		$this->assertCount( 4, $cache->getValue( $registry ) );
+	}
+
+	public function test_provider_manifest_is_reused_until_explicit_invalidation() {
+		$calls = 0;
+		$GLOBALS['icon_library_test_filters']['icon_library_collection_providers'] = array(
+			static function () use ( &$calls ) {
+				return array( 'provider' => array( 'manifest' => static function () use ( &$calls ) { ++$calls; return array( 'slug' => 'provider', 'name' => 'Provider', 'icons' => array() ); } ) );
+			},
+		);
+		try {
+			$registry = $this->registry();
+			$registry->get_manifest( 'provider' );
+			$registry->get_manifest( 'provider' );
+			$this->assertSame( 1, $calls );
+			$registry->clear_request_caches();
+			$registry->get_manifest( 'provider' );
+			$this->assertSame( 2, $calls );
+		} finally {
+			unset( $GLOBALS['icon_library_test_filters']['icon_library_collection_providers'] );
+		}
+	}
+
+	/** Missing state enables only variants marked as defaults. */
 	public function test_missing_variant_state_enables_default_variants() {
 		$this->assertSame( array( 'solid' ), $this->registry()->get_enabled_variants( 'test' ) );
 	}
@@ -202,6 +243,24 @@ class CollectionRegistryTest extends TestCase {
 				)
 			)
 		);
+	}
+
+	/** Finds enabled icons without requiring Core registration first. */
+	public function test_finds_enabled_icon_by_core_name() {
+		$registry = $this->registry();
+		$icon     = $registry->get_icon_by_core_name( 'test/one-solid' );
+
+		$this->assertIsArray( $icon );
+		$this->assertSame( 'test', $icon['collection'] );
+		$this->assertSame( 'solid', $icon['variant'] );
+		$this->assertNull( $registry->get_icon_by_core_name( 'test/three-outline' ) );
+	}
+
+	/** Enabling an experimental variant makes its icons available to mutations. */
+	public function test_finds_icon_after_variant_is_enabled() {
+		$registry = $this->registry();
+		$this->assertTrue( $registry->set_variant_enabled( 'test', 'outline', true ) );
+		$this->assertSame( 'test/three-outline', $registry->get_icon_by_core_name( 'test/three-outline' )['coreIconName'] );
 	}
 
 	/** Explicit activation enables an experimental variant. */

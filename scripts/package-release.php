@@ -62,6 +62,7 @@ foreach ( glob( $root . '/assets/icons/*/manifest.json' ) as $manifest_path ) {
 		exit( 1 );
 	}
 	$files['.'][] = 'assets/icons/' . $collection . '/manifest.json';
+	$files['.'][] = 'assets/icons/' . $collection . '/metadata.json';
 	$files['.'][] = 'assets/icons/' . $collection . '/LICENSE';
 	foreach ( $manifest['icons'] as $icon ) {
 		if ( empty( $icon['path'] ) || false !== strpos( $icon['path'], '..' ) ) {
